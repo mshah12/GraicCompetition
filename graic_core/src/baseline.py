@@ -10,6 +10,7 @@ from carla_msgs.msg import CarlaEgoVehicleControl
 from graic_msgs.msg import LaneList
 from graic_msgs.msg import LaneInfo
 import carla
+from rrtstar import RRTStar
 
 class VehicleDecision():
     def __init__(self):
