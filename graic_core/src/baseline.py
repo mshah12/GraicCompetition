@@ -248,7 +248,7 @@ class Controller(object):
         # compute a new RRT graph if we are at a new checkpoint
         if self.prevWaypoint == None:
             self.prevWaypoint = waypoint
-            self.decisionModule.calcRRTStar(currState, obstacleList, waypoint)
+            self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.prevWaypoint, lane_marker)
         
         # if still at the same waypoint, keep popping nodes from the shortest path
         if self.prevWaypoint == waypoint:
@@ -260,7 +260,7 @@ class Controller(object):
                     obs_vertex = (obs_x, obs_y)
                     # if next node is within an obstacle, recalculate the graph
                     if nextNode == obs_vertex: # NOTE: Replace with the isThruObstacle() function?
-                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint)
+                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.prevWaypoint lane_marker)
                         nextNode = self.shortestPath.pop()
 
         # Get the target state from decision module
