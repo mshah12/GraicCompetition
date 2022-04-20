@@ -1,4 +1,5 @@
 #!/bin/bash 
+rm -r ../tmp
 cd ..
 mkdir tmp
 cd tmp
