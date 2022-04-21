@@ -260,7 +260,7 @@ class Controller(object):
                     obs_vertex = (obs_x, obs_y)
                     # if next node is within an obstacle, recalculate the graph
                     if nextNode == obs_vertex: # NOTE: Replace with the isThruObstacle() function?
-                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.prevWaypoint lane_marker)
+                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.prevWaypoint, lane_marker)
                         nextNode = self.shortestPath.pop()
 
         # Get the target state from decision module
