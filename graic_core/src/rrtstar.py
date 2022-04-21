@@ -15,7 +15,7 @@ from collections import deque
     Outputs: list of nodes that represent optimal path to waypoint
 """
 class RRTStar():
-    def __init__(self, currState, obstacleList, waypoint):
+    def __init__(self, currState, obstacleList, waypoint, prevWaypoint, lane_info):
         # list of nodes in the graph -- will be in tuple form (x,y)
         # list of edges in the graph -- key will be a tuple of (node1,node2) and the value will be the cost/weight of the edge
         self.nodes = []
@@ -31,18 +31,76 @@ class RRTStar():
         self.rightLaneEq = []
         self.currLeftEdge = []
         self.currRightEdge = []
-        # use ROS subscription to get list of left and right edge nodes
-        self.leftLaneNodes = rospy.Subscriber('/carla/%s/left_lane_markers' % 'ego_vehicle', LaneList, self.laneNodesCallback)
-        self.rightLaneNodes = rospy.Subscriber('/carla/%s/right_lane_markers' % 'ego_vehicle', LaneList, self.laneNodesCallback)
+
+        self.lane_info = lane_info
+
+        # waypoint stuff
+        self.waypoint = waypoint
+        self.prevWaypoint = prevWaypoint
+
+        rospy.init_node('race_run')
+        self.host = rospy.get_param('~host', 'localhost')
+        self.port = rospy.get_param('~port', 2000)
+
+        self.client = carla.Client(self.host, self.port)
+        self.world = self.client.get_world()
+        self.map = self.world.get_map()
 
     """
-        Callback function called when rospy subscription is used. Does nothing...
-        Inputs: None
-        Outputs: None
+        Get indeces of lane markers that correspond to the previous and current waypoint
+        Inputs: bounding boxes and transforms
+        Outputs: index for next and prev waypoints
     """
-    def laneNodesCallback(self):
-        # DO NOTHING -- NEED AS CALLBACK PARAMETER FOR ROS SUBSCRIPTION
-        return
+    def getLaneIndex(nextboundingbox, nexttransform, prevboundingbox, prevtransform):
+        # loop through all center lane markers:
+        nextindex = -1
+        previndex = -1
+        for i in range(len(self.lane_info.lane_markers_center.location)):
+            if nextboundingbox.contains(self.lane_info.lane_markers_center.location[i], nexttransform):
+                nextindex = i
+            if prevboundingbox.contains(self.lane_info.lane_markers_center.location[i], prevtransform):
+                previndex = i
+            if previndex != -1 and nextindex != -1:
+                break
+
+        return nextindex, previndex
+
+
+
+    """
+        Return a list of intermediate points between current and next waypoint
+        Inputs: None
+        Outputs: list center intermediate waypoints
+    """
+    def getIntermediateNodes(self):
+        next_location = carla.Location(self.prevWaypoint.location[0],
+                                      self.prevWaypoint.location[1],
+                                      self.prevWaypoint.location[2])
+        next_rotation = self.map.get_waypoint(next_location,
+                                            project_to_road=True,
+                                            lane_type=carla.LaneType.Driving).transform.rotation
+
+        next_transform = carla.Transform(next_location, next_rotation)
+        next_box = carla.BoundingBox(next_location, carla.Vector3D(0, 6, 3))
+
+        prev_location = carla.Location(self.waypoint.location[0],
+                                      self.waypoint.location[1],
+                                      self.waypoint.location[2])
+        prev_rotation = self.map.get_waypoint(prev_location,
+                                            project_to_road=True,
+                                            lane_type=carla.LaneType.Driving).transform.rotation
+
+        prev_transform = carla.Transform(prev_location, prev_rotation)
+        prev_box = carla.BoundingBox(prev_location, carla.Vector3D(0, 6, 3))
+
+        nextindex, previndex = self.getLaneIndex(next_box, next_transform, prev_box, prev_transform)
+
+        every_n_markers = (nextindex - previndex)/10
+
+        ret = self.lane_info.lane_markers_center.location[previndex:nextindex:every_n_markers]
+
+        return ret
+
 
     """
         Update the left lane nodes and right lane nodes to contain the current area's edge points
