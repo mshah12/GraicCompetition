@@ -32,15 +32,15 @@ class VehicleDecision():
         self.shortestPath = []
         self.prevWaypoint = None
 
-    def calcRRTStar(self, currState, obstacleList, waypoint):
+    def calcRRTStar(self, currState, obstacleList, waypoint, prevWaypoint, lanemarkers):
         # init a new RRT object
-        RRTObject = RRTStar(currState, obstacleList, waypoint)
+        RRTObject = RRTStar(currState, obstacleList, waypoint, prevWaypoint, lanemarkers)
         # populate internal variables with left and right lane nodes
         RRTObject.getLaneEdges()
         # calculate and store lane equations internally
         RRTObject.calcLaneEdgeEquation()
         # create RRT Graph with 1000 nodes
-        RRTObject.calcGraph(1000)
+        RRTObject.calcGraph(750)
         # get shortest path from start to goal
         self.shortestPath = RRTObject.shortestPath()
 
@@ -246,13 +246,13 @@ class Controller(object):
         nextNode = None
 
         # compute a new RRT graph if we are at a new checkpoint
-        if self.prevWaypoint == None:
-            self.prevWaypoint = waypoint
-            self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.prevWaypoint, lane_marker)
+        if self.decisionModule.prevWaypoint == None:
+            self.decisionModule.prevWaypoint = waypoint
+            self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.decisionModule.prevWaypoint, lane_marker)
         
         # if still at the same waypoint, keep popping nodes from the shortest path
         if self.prevWaypoint == waypoint:
-            nextNode = self.shortestPath.pop()
+            nextNode = self.decisionModule.shortestPath.pop()
             for obs in obstacleList:
                 for vertex in obs.vertices_locations:
                     obs_x = vertex.vertex_location.x
@@ -260,8 +260,8 @@ class Controller(object):
                     obs_vertex = (obs_x, obs_y)
                     # if next node is within an obstacle, recalculate the graph
                     if nextNode == obs_vertex: # NOTE: Replace with the isThruObstacle() function?
-                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.prevWaypoint, lane_marker)
-                        nextNode = self.shortestPath.pop()
+                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.decisionModule.sprevWaypoint, lane_marker)
+                        nextNode = self.decisionModule.shortestPath.pop()
 
         # Get the target state from decision module
         refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, nextNode)

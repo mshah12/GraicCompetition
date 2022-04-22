@@ -18,12 +18,16 @@ class RRTStar():
     def __init__(self, currState, obstacleList, waypoint, prevWaypoint, lane_info):
         # list of nodes in the graph -- will be in tuple form (x,y)
         # list of edges in the graph -- key will be a tuple of (node1,node2) and the value will be the cost/weight of the edge
-        self.nodes = []
-        self.edges = {}
+        self.nodes = set()
+        self.edges = dict()
+        self.weights = {} 
+        self.goal_nodes = set()
+        
         # starting node is the car's current (x,y)
         # goal node is the waypoint's (x,y)
-        self.start = (currState[0][0], currState[0][1])
-        self.goal = (waypoint[0], waypoint[1])
+        self.start = (int(currState[0][0]), int(currState[0][1]))
+        self.goal = waypoint
+        
         # list of obstacles
         self.obstacleList = obstacleList
         # placeholder global variables for later use
@@ -33,12 +37,15 @@ class RRTStar():
         self.currRightEdge = []
 
         self.lane_info = lane_info
+        self.leftLaneNodes = lane_info.lane_markers_left
+        self.rightLaneNodes = lane_info.lane_markers_right
+        
 
         # waypoint stuff
         self.waypoint = waypoint
         self.prevWaypoint = prevWaypoint
 
-        rospy.init_node('race_run')
+        # rospy.init_node('race_run')
         self.host = rospy.get_param('~host', 'localhost')
         self.port = rospy.get_param('~port', 2000)
 
@@ -108,21 +115,21 @@ class RRTStar():
         Outputs: None
     """
     def getLaneEdges(self):
-        left_idx = None
-        right_idx = None
+        left_idx = 0
+        right_idx = 0
         # get current x position of car
-        curr_x = self.start[0]
+        curr_y = self.start[1]
         # find current index of left and right edges
-        for i in range(len(self.leftLaneNodes)):
-            if self.leftLaneNodes[i] == curr_x:
+        for i in range(len(self.leftLaneNodes.location)):
+            if int(self.leftLaneNodes.location[i].y) == curr_y:
                 left_idx = i
-        for i in range(len(self.rightLaneNodes)):
-            if self.rightLaneNodes[i] == curr_x:
+        for i in range(len(self.rightLaneNodes.location)):
+            if int(self.rightLaneNodes.location[i].y) == curr_y:
                 right_idx = i
         # get list of nodes for left and right edges up to 20 units ahead -- subject to change
         look_ahead = 20
-        self.currLeftEdge = self.leftLaneNodes[left_idx : left_idx + look_ahead]
-        self.currRightEdge = self.rightLaneNodes[right_idx : right_idx + look_ahead]
+        self.currLeftEdge = self.leftLaneNodes.location[left_idx : left_idx + look_ahead]
+        self.currRightEdge = self.rightLaneNodes.location[right_idx : right_idx + look_ahead]
         # TODO: REMEMBER PREVIOUS INDEX TO USE FOR FUTURE REFERENCE **
 
 
@@ -133,10 +140,10 @@ class RRTStar():
     """
     def calcLaneEdgeEquation(self):
         # split left lane nodes into x and y list
-        left_edge_x = self.currLeftEdge[0]
-        left_edge_y = self.currLeftEdge[1]
-        right_edge_x = self.currRightEdge[0]
-        right_edge_y = self.currRightEdge[1]
+        left_edge_x = [n.x for n in self.leftLaneNodes.location]
+        left_edge_y = [n.y for n in self.leftLaneNodes.location]
+        right_edge_x = [n.x for n in self.rightLaneNodes.location]
+        right_edge_y = [n.y for n in self.rightLaneNodes.location]
         # compute polyfit lines
         self.leftLaneEq = np.polyfit(left_edge_x, left_edge_y, 2)
         self.rightLaneEq = np.polyfit(right_edge_x, right_edge_y, 2)
@@ -161,23 +168,19 @@ class RRTStar():
             True: if node is valid
             False: if node is within the radius of an obstacle
     """
+    """
+        Determines if a node is valid -- meaning it is not in the radius of an obstacle
+        Inputs: 
+            node: the node to check
+        Outputs: 
+            True: if node is valid
+            False: if node is within the radius of an obstacle
+    """
     def isValidNode(self, node):
         for obs in self.obstacleList:
             if self.isInObstacle(node, obs):
                 return False 
         return True 
-
-    # def isValidNode(self, node):
-    #     for obs in self.obstacleList:
-    #         # TODO: CHECK AND SEE IF IT IS EVERY PT OR JUST THE BOUNDING BOX OF THE OBSTACLE
-    #         # IF BOUNDING BOX, MAKE SURE PT IS NOT INSIDE THE BOX
-    #         for vertex in obs.vertices_locations:
-    #             obs_x = vertex.vertex_location.x
-    #             obs_y = vertex.vertex_location.y
-    #             obstacle = (obs_x, obs_y)
-    #             if node == obstacle:
-    #                 return False
-    #     return True
 
     """
         Returns a list of 4 points representing the top-down view of an object's bounding box 
@@ -185,38 +188,70 @@ class RRTStar():
             node: object of interest
         Outputs:
             list: of (x,y) points representing the corners of the bounding box of an object
-            in the form [ul, bl, br, ur]
+            in the form [ul, ur, bl, br]
     """     
-    def get_box(self, object): 
-        # TODO: Figure out how to get a bounding box of an object
-        pass 
+    def get_obstacle_box(self, obs):
+        v = [] 
+        for vertex in obs.vertices_locations:
+                obs_x = vertex.vertex_location.x
+                obs_y = vertex.vertex_location.y
+                v.append((obs_x, obs_y))
+        return [v[4], v[0], v[2], v[0]] 
 
     """
-        Determines if a point lies within an obstacle + some dilation delta
+        Returns a list of 4 points representing the top-down view of an object's bounding box 
+        Inputs: 
+            node: object of interest
+        Outputs:
+            list: of (x,y) points representing the corners of the bounding box of an object
+            in the form [ul, ur, bl, br]
+    """     
+    def get_waypoint_box(self, waypoint):
+        location = carla.Location(waypoint.location.x, waypoint.location.y, waypoint.location.z)
+        rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        box = carla.BoundingBox(location, carla.Vector3D(3, 6, 3))
+        v = [(n.x, n.y) for n in box.get_local_vertices()]
+        return [v[4], v[0], v[2], v[0]] 
+
+    """
+        Determines if a point lies within a box or not  
+        Inputs: 
+            node: object of interest
+        Outputs:
+            True: if point lies within box
+            False: if point is not in box 
+        Source:
+            https://stackoverflow.com/questions/63527698/determine-if-points-are-within-a-rotated-rectangle-standard-python-2-7-library    
+    """    
+    def isInBox(self, node, vertices):
+        curr_x = node[0]
+        curr_y = node[1]
+        n = len(vertices)
+        def is_on_right_side(x, y, xy0, xy1):
+            x0, y0 = xy0
+            x1, y1 = xy1 
+            a = float(y1 - y0)
+            b = float(x0 - x1)
+            c = -a*x0 + b*y0
+            return a*x + b*y + c >= 0 
+        is_right = [is_on_right_side(curr_x, curr_y, (vertices[i][0], vertices[i][1]), (vertices[(i+1)%n][0],vertices[(i+1)%n][1])) for i in range(n)]
+        all_left = not any (is_right)
+        all_right = all(is_right) 
+        return all_left or all_right 
+
+    """
+        Determines if a point lies within an obstacle
         Inputs: 
             node: node of interest
             obstacle: obstacle of interest
-            dilation_radius: margin of error for obstacle collistion detection
         Outputs: 
             True: if node is within an obstacle
             False: if node is not within an obstacle 
     """
-    def isInObstacle(self, node, obstacle, delta=5):
-        curr_x = node[0]
-        curr_y = node[1]
-
-        obs_v = self.get_box(obstacle)
-        ul = obs_v[0]
-        bl = obs_v[1]
-        br = obs_v[2]
-
-        y_upper = ul[1] + delta
-        y_lower = bl[1] - delta
-        x_left = ul[0] - delta
-        x_right = br[0] + delta
-
-        return curr_x > x_left and curr_x < x_right and curr_y > y_lower and curr_y < y_upper
-
+    def isInObstacle(self, node, obstacle):
+        obs_v = self.get_obstacle_box(obstacle)
+        return self.isInBox(node, obs_v)
+        
     """
         Determines if 2 lines intersect with each other 
         Inputs: 
@@ -255,7 +290,7 @@ class RRTStar():
         new_line = [(node1[0], node1[1]), (node2[0], node2[1])]
         for obs in self.obstacleList:
             # get bounding box pts 
-            obs_v = self.get_box(obs) 
+            obs_v = self.get_obstacle_box(obs) 
             # define the corners of the box
             ul = obs_v[0] 
             bl = obs_v[1]
@@ -275,21 +310,6 @@ class RRTStar():
                 return True 
         return False 
 
-    # def isThruObstacle(self, node1, node2):
-    #     # create a linear line from node1 to node2
-    #     x_points = [node1[0], node2[0]]
-    #     y_points = [node1[1], node2[2]]
-    #     line = np.polyfit(x_points, y_points, 1)
-    #     # check if any obstacles' vertices fall onto the line
-    #     for obs in self.obstacleList:
-    #         for vertex in obs.vertices_locations:
-    #             obs_x = vertex.vertex_location.x
-    #             obs_y = vertex.vertex_location.y
-    #             line_result = (line[0] * obs_x) + (line[1])
-    #             # NOTE: May have to add some "wiggle room" or a "cushion" during this check...
-    #             if line_result == obs_y:
-    #                 return True
-    #     return False
 
     """
         Determines the nearest neighboring node of a passed in node
@@ -318,35 +338,15 @@ class RRTStar():
 
 
     """
-        Converts the waypoint node into a line and returns a series of 10 points along that line
+        Converts the waypoint node into a 4 point box
         Inputs: 
             node: the waypoint goal node
         Outputs: 
-            goal_nodes: list of 10 nodes along the newly created line
+            goal_region: 4 point box
     """
-    def findGoalNodes(self, node):
-        # init default vars
-        left_node = (0,0)
-        right_node = (0,0)
-        # get the left and right nodes on the left and right edge at the same y-postition of the waypoint
-        center_y = node[1]
-        for node in self.leftLaneNodes:
-            if node[1] == center_y:
-                left_node = (node[0], center_y)
-        for node in self.rightLaneNodes:
-            if node[1] == center_y:
-                right_node = (node[0], center_y)
-        # create a linear line that passes through the two points computed above
-        goal_line = np.polyfit([left_node[0], right_node[0]], [left_node[1], right_node[1]], 1)
-        # grab a series of 10 points along the line computed
-        goal_nodes = []
-        x_diff = abs(right_node[0] - left_node[0])
-        step = x_diff / 10
-        for i in range(10):
-            x_val = left_node[0] + (step * i)
-            y_val = (goal_line[0] * x_val) + (goal_line[1])
-            goal_nodes.append((x_val, y_val))
-        return goal_nodes
+    def findGoalRegion(self, node):
+    	return self.get_waypoint_box(node)
+
 
     """
         Create a bounding box region where nodes can be randomly generated and connected
@@ -355,43 +355,56 @@ class RRTStar():
     """
     def calcGraph(self, max_iter):
         # add current nodes to the graph
-        self.nodes.append(self.start)
-        goal_nodes = self.findGoalNodes(self.goal)
-        for node in goal_nodes:
-            self.nodes.append(node)
-        #
+        self.nodes.add(self.start)
+        self.edges[self.start] = set()
+        goal_region = self.findGoalRegion(self.goal)
+        print(goal_region)
         # NOTE:
         # Ideally, we want to extend the goal node into a line and add all points on the line into the graph's intial nodes as the goal nodes
         # For now, I'm just adding one goal node for simplicity's sake
-        #
-        # compute the 4 bounding points of the region of free space
-        # compute x min and max
-        region_x_min = min(self.currLeftEdge, key=lambda x: x[0])
-        region_x_max = max(self.currRightEdge, key=lambda x: x[0])
+        
+        x_bound1 = self.goal.location.x 
+        x_bound2 = self.start[0] 
+        x_min = min(x_bound1, x_bound2)
+        x_max = max(x_bound1, x_bound2) 
+        
         # compute y min and max
         # generate max_iter number of nodes
         for i in range(max_iter):
-            new_node_x = np.random.randint(region_x_min, region_x_max)
+            new_node_x = np.random.randint(x_min, x_max)
             region_y_min = (self.leftLaneEq[0] * (new_node_x ** 2)) + (self.leftLaneEq[1] * new_node_x) + (self.leftLaneEq[2])
             region_y_max = (self.rightLaneEq[0] * (new_node_x ** 2)) + (self.rightLaneEq[1] * new_node_x) + (self.rightLaneEq[2])
-            new_node_y = np.random.randint(region_y_min, region_y_max)
+            new_node_y = np.random.randint(min(region_y_min, region_y_max), max(region_y_min, region_y_max))
             # generate new node and check if valid
             new_node = (new_node_x, new_node_y)
             if self.isValidNode(new_node):
                 # if node is valid, connect to the nearest neighbor if applicible
-                self.nodes.append(new_node)
+                self.nodes.add(new_node)
+                if new_node not in self.edges:
+                    self.edges[new_node] = set()
                 nearest_node = self.nearestNeighbor(new_node)
                 if nearest_node is not None:
-                    # add edge into graph with weight as the distance between the two nodes
-                    self.edges[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
+                    self.edges[new_node].add(nearest_node)
+                    self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
+                if self.isInBox(new_node, goal_region):
+                    self.goal_nodes.add(nearest_node)
+        # connect the start node to the rest of the graph 
+        nearest_node = self.nearestNeighbor(self.start) 
+        self.edges[self.start].add(nearest_node)
+        self.weights[(self.start, nearest_node)] = self.distance(self.start, nearest_node)
+
+        # print("Nodes: ", self.nodes)
+        print("---------------------------------------------------------------------------------------------------------") 
+        print("Edges: ", self.edges)
+                    
 
     # https://github.com/dmahugh/dijkstra-algorithm/blob/master/dijkstra_algorithm.py
     def shortestPath(self):
         # initialize local variables
         start_node = self.start
-        end_node = self.goal
+        # end_node = self.goal
         unvisited_nodes = self.nodes.copy()  # All nodes are initially unvisited.
-
+        print(self.goal_nodes)
         # Create a dictionary of each node's distance from start_node. We will
         # update each node's distance whenever we find a shorter path.
         distance_from_start = {
@@ -414,18 +427,20 @@ class RRTStar():
             # nodes are not connected to start_node, so we're done.
             if distance_from_start[current_node] == float("inf"):
                 break
-
+            print(current_node)
             # For each neighbor of current_node, check whether the total distance
             # to the neighbor via current_node is shorter than the distance we
             # currently have for that node. If it is, update the neighbor's values
             # for distance_from_start and previous_node.
-            for neighbor, distance in self.adjacency_list[current_node]:
-                new_path = distance_from_start[current_node] + distance
+            for neighbor in self.edges[current_node]:
+                new_path = distance_from_start[current_node] + self.weights[(current_node, neighbor)]
                 if new_path < distance_from_start[neighbor]:
                     distance_from_start[neighbor] = new_path
                     previous_node[neighbor] = current_node
 
-            if current_node == end_node:
+            if current_node in self.goal_nodes:
+                print("Reached the end")
+                end_node = current_node
                 break # we've visited the destination node, so we're done
 
         # To build the path to be returned, we iterate through the nodes from
@@ -437,7 +452,7 @@ class RRTStar():
             path.appendleft(current_node)
             current_node = previous_node[current_node]
         path.appendleft(start_node)
-
+        print(path)
         return path, distance_from_start[end_node]
             
 
