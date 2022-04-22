@@ -196,7 +196,7 @@ class RRTStar():
                 obs_x = vertex.vertex_location.x
                 obs_y = vertex.vertex_location.y
                 v.append((obs_x, obs_y))
-        return [v[4], v[0], v[2], v[0]] 
+        return [v[0], v[2], v[6], v[4]] 
 
     """
         Returns a list of 4 points representing the top-down view of an object's bounding box 
@@ -204,14 +204,14 @@ class RRTStar():
             node: object of interest
         Outputs:
             list: of (x,y) points representing the corners of the bounding box of an object
-            in the form [ul, ur, bl, br]
+            in the form [ul, ur, br, bl]
     """     
     def get_waypoint_box(self, waypoint):
         location = carla.Location(waypoint.location.x, waypoint.location.y, waypoint.location.z)
         rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
         box = carla.BoundingBox(location, carla.Vector3D(3, 6, 3))
         v = [(n.x, n.y) for n in box.get_local_vertices()]
-        return [v[4], v[0], v[2], v[0]] 
+        return [v[0], v[2], v[6], v[4]] 
 
     """
         Determines if a point lies within a box or not  
@@ -232,8 +232,9 @@ class RRTStar():
             x1, y1 = xy1 
             a = float(y1 - y0)
             b = float(x0 - x1)
-            c = -a*x0 + b*y0
-            return a*x + b*y + c >= 0 
+            c = -a*x0 - b*y0
+            val = a*x + b*y + c
+            return val >= 0
         is_right = [is_on_right_side(curr_x, curr_y, (vertices[i][0], vertices[i][1]), (vertices[(i+1)%n][0],vertices[(i+1)%n][1])) for i in range(n)]
         all_left = not any (is_right)
         all_right = all(is_right) 
@@ -293,13 +294,13 @@ class RRTStar():
             obs_v = self.get_obstacle_box(obs) 
             # define the corners of the box
             ul = obs_v[0] 
-            bl = obs_v[1]
+            ur = obs_v[1]
             br = obs_v[2]
-            ur = obs_v[3]
+            bl = obs_v[3]
             # create the lines for the box
             top_line = [(ul[0], ul[1]),(ur[0], ur[1])] 
-            bottom_line = [(bl[0], bl[1]),(br[0], br[1])]
-            left_line = [(ul[0], ul[1]), (bl[0], bl[1])]
+            bottom_line = [(br[0], br[1]), (bl[0], bl[1])]
+            left_line = [(bl[0], bl[1]), (ul[0], ul[1])]
             right_line = [(ur[0], ur[1]), (br[0], br[1])]
             # do collision calculation with all sides 
             top = self.linesCollide(new_line, top_line) 
@@ -321,7 +322,7 @@ class RRTStar():
     def nearestNeighbor(self, node):
         # set minimum distance and local variables
         nearest_node = None
-        radius = 10
+        radius = 3
         minDist = float("inf")
         # check the distance between input node and all nodes -- return the nearest node
         for n in self.nodes:
@@ -358,7 +359,7 @@ class RRTStar():
         self.nodes.add(self.start)
         self.edges[self.start] = set()
         goal_region = self.findGoalRegion(self.goal)
-        print(goal_region)
+
         # NOTE:
         # Ideally, we want to extend the goal node into a line and add all points on the line into the graph's intial nodes as the goal nodes
         # For now, I'm just adding one goal node for simplicity's sake
@@ -387,15 +388,15 @@ class RRTStar():
                     self.edges[new_node].add(nearest_node)
                     self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
                 if self.isInBox(new_node, goal_region):
-                    self.goal_nodes.add(nearest_node)
+                    self.goal_nodes.add(new_node)
         # connect the start node to the rest of the graph 
         nearest_node = self.nearestNeighbor(self.start) 
         self.edges[self.start].add(nearest_node)
         self.weights[(self.start, nearest_node)] = self.distance(self.start, nearest_node)
 
         # print("Nodes: ", self.nodes)
-        print("---------------------------------------------------------------------------------------------------------") 
-        print("Edges: ", self.edges)
+        #print("---------------------------------------------------------------------------------------------------------") 
+        #print("Edges: ", self.edges)
                     
 
     # https://github.com/dmahugh/dijkstra-algorithm/blob/master/dijkstra_algorithm.py
@@ -404,7 +405,7 @@ class RRTStar():
         start_node = self.start
         # end_node = self.goal
         unvisited_nodes = self.nodes.copy()  # All nodes are initially unvisited.
-        print(self.goal_nodes)
+        print("Goal nodes:", self.goal_nodes)
         # Create a dictionary of each node's distance from start_node. We will
         # update each node's distance whenever we find a shorter path.
         distance_from_start = {
@@ -427,7 +428,7 @@ class RRTStar():
             # nodes are not connected to start_node, so we're done.
             if distance_from_start[current_node] == float("inf"):
                 break
-            print(current_node)
+            #print(current_node)
             # For each neighbor of current_node, check whether the total distance
             # to the neighbor via current_node is shorter than the distance we
             # currently have for that node. If it is, update the neighbor's values

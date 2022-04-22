@@ -251,8 +251,8 @@ class Controller(object):
             self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.decisionModule.prevWaypoint, lane_marker)
         
         # if still at the same waypoint, keep popping nodes from the shortest path
-        if self.prevWaypoint == waypoint:
-            nextNode = self.decisionModule.shortestPath.pop()
+        if self.decisionModule.prevWaypoint == waypoint:
+            nextNode = self.decisionModule.shortestPath[0].pop()
             for obs in obstacleList:
                 for vertex in obs.vertices_locations:
                     obs_x = vertex.vertex_location.x
@@ -260,8 +260,8 @@ class Controller(object):
                     obs_vertex = (obs_x, obs_y)
                     # if next node is within an obstacle, recalculate the graph
                     if nextNode == obs_vertex: # NOTE: Replace with the isThruObstacle() function?
-                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.decisionModule.sprevWaypoint, lane_marker)
-                        nextNode = self.decisionModule.shortestPath.pop()
+                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, self.decisionModule.prevWaypoint, lane_marker)
+                        nextNode = self.decisionModule.shortestPath[0].pop()
 
         # Get the target state from decision module
         refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, nextNode)
