@@ -88,7 +88,7 @@ class RRTStar():
                                             lane_type=carla.LaneType.Driving).transform.rotation
 
         next_transform = carla.Transform(next_location, next_rotation)
-        next_box = carla.BoundingBox(next_location, carla.Vector3D(0, 6, 3))
+        next_box = carla.BoundingBox(next_location, carla.Vector3D(3, 6, 3))
 
         prev_location = carla.Location(self.waypoint.location[0],
                                       self.waypoint.location[1],
@@ -98,7 +98,7 @@ class RRTStar():
                                             lane_type=carla.LaneType.Driving).transform.rotation
 
         prev_transform = carla.Transform(prev_location, prev_rotation)
-        prev_box = carla.BoundingBox(prev_location, carla.Vector3D(0, 6, 3))
+        prev_box = carla.BoundingBox(prev_location, carla.Vector3D(3, 6, 3))
 
         nextindex, previndex = self.getLaneIndex(next_box, next_transform, prev_box, prev_transform)
 
@@ -322,7 +322,7 @@ class RRTStar():
     def nearestNeighbor(self, node):
         # set minimum distance and local variables
         nearest_node = None
-        radius = 3
+        radius = 5
         minDist = float("inf")
         # check the distance between input node and all nodes -- return the nearest node
         for n in self.nodes:
@@ -368,7 +368,6 @@ class RRTStar():
         x_bound2 = self.start[0] 
         x_min = min(x_bound1, x_bound2)
         x_max = max(x_bound1, x_bound2) 
-        
         # compute y min and max
         # generate max_iter number of nodes
         for i in range(max_iter):
@@ -378,17 +377,22 @@ class RRTStar():
             new_node_y = np.random.randint(min(region_y_min, region_y_max), max(region_y_min, region_y_max))
             # generate new node and check if valid
             new_node = (new_node_x, new_node_y)
+            new_is_in_goal = False
             if self.isValidNode(new_node):
                 # if node is valid, connect to the nearest neighbor if applicible
                 self.nodes.add(new_node)
                 if new_node not in self.edges:
                     self.edges[new_node] = set()
                 nearest_node = self.nearestNeighbor(new_node)
-                if nearest_node is not None:
-                    self.edges[new_node].add(nearest_node)
-                    self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
                 if self.isInBox(new_node, goal_region):
                     self.goal_nodes.add(new_node)
+                    new_is_in_goal = True 
+                if nearest_node is not None:
+                    if new_is_in_goal and self.isInBox(nearest_node, goal_region):
+                        continue
+                    self.edges[new_node].add(nearest_node)
+                    self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
+    
         # connect the start node to the rest of the graph 
         nearest_node = self.nearestNeighbor(self.start) 
         self.edges[self.start].add(nearest_node)
@@ -405,7 +409,7 @@ class RRTStar():
         start_node = self.start
         # end_node = self.goal
         unvisited_nodes = self.nodes.copy()  # All nodes are initially unvisited.
-        print("Goal nodes:", self.goal_nodes)
+        #print("Goal nodes:", self.goal_nodes)
         # Create a dictionary of each node's distance from start_node. We will
         # update each node's distance whenever we find a shorter path.
         distance_from_start = {
@@ -440,10 +444,13 @@ class RRTStar():
                     previous_node[neighbor] = current_node
 
             if current_node in self.goal_nodes:
-                print("Reached the end")
+                #print("Reached the end")
                 end_node = current_node
                 break # we've visited the destination node, so we're done
-
+        #for node in self.nodes:
+        #    for goal_node in self.goal_nodes:
+        #        if goal_node in self.edges[node]:
+        #            print("Edge exists from ", node, " to goal node ", goal_node)
         # To build the path to be returned, we iterate through the nodes from
         # end_node back to start_node. Note the use of a deque, which can
         # appendleft with O(1) performance.
