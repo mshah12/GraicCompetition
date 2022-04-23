@@ -3,6 +3,7 @@ import rospkg
 import numpy as np
 import argparse
 import time
+import math
 from graic_msgs.msg import ObstacleList, ObstacleInfo
 from graic_msgs.msg import LocationInfo, WaypointInfo
 from ackermann_msgs.msg import AckermannDrive
@@ -33,16 +34,22 @@ class VehicleDecision():
         self.prevWaypoint = None
 
     def calcRRTStar(self, currState, obstacleList, waypoint, prevWaypoint, lanemarkers):
+        i = 0
         # init a new RRT object
-        RRTObject = RRTStar(currState, obstacleList, waypoint, prevWaypoint, lanemarkers)
-        # populate internal variables with left and right lane nodes
-        RRTObject.getLaneEdges()
-        # calculate and store lane equations internally
-        RRTObject.calcLaneEdgeEquation()
-        # create RRT Graph with 1000 nodes
-        RRTObject.calcGraph(750)
-        # get shortest path from start to goal
-        self.shortestPath = RRTObject.shortestPath()
+        while(1):
+            RRTObject = RRTStar(currState, obstacleList, waypoint, prevWaypoint, lanemarkers)
+            # populate internal variables with left and right lane nodes
+            RRTObject.getLaneEdges()
+            # calculate and store lane equations internally
+            RRTObject.calcLaneEdgeEquation()
+            # create RRT Graph with 1000 nodes
+            RRTObject.calcGraph(100)
+            # get shortest path from start to goal
+            self.shortestPath = RRTObject.shortestPath()
+            print(i)
+            i+=1
+            if len(self.shortestPath) > 0:
+                break 
 
 
     def get_ref_state(self, currState, obstacleList, lane_marker, waypoint):
@@ -57,9 +64,8 @@ class VehicleDecision():
 
         self.lane_marker = lane_marker.lane_markers_center.location[-1]
         self.lane_state = lane_marker.lane_state
-        if not self.target_x or not self.target_y:
-            self.target_x = self.lane_marker.x
-            self.target_y = self.lane_marker.y
+        self.target_x = waypoint[0]
+        self.target_y = waypoint[1]
         if self.reachEnd:
             return None
         # print("Reach end: ", self.reachEnd)
@@ -175,7 +181,7 @@ class VehicleDecision():
 
         else:
             self.counter += 1
-
+        #print(self.target_x, self.target_y, waypoint[0], waypoint[1])
         return [self.target_x, self.target_y, self.speed]
 
 
@@ -253,8 +259,9 @@ class Controller(object):
             dist: the distance between node1 and node2
     """
     def distance(self, node1, node2):
-        dist =  np.linalg.norm(np.array(node1) - np.array(node2))
-        return dist
+        x1, y1 = float(node1[0]), float(node1[1])
+        x2, y2 = float(node2[0]), float(node2[1])
+        return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
     def isInBox(self, node, vertices):
         curr_x = node[0]
@@ -291,26 +298,26 @@ class Controller(object):
     def execute(self, currState, obstacleList, lane_marker, waypoint):
         if self.nextWaypoint == None:
             self.nextWaypoint = waypoint
-        if len(self.curr_path) == 0:
+        if len(self.curr_path) == 0 or self.distance((int(waypoint.location.x), int(waypoint.location.y)), (int(currState[0][0]), int(currState[0][1]))) <= 6:
             self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
             self.curr_path = self.decisionModule.shortestPath[0]
             self.next_ref_state = self.curr_path.popleft()
-            
-            if obstacleList:
-                for obs in obstacleList:
-                    if self.isInObstacle(self.next_ref_state, obs):
-                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
-                        self.curr_path = self.decisionModule.shortestPath[0]
-                        self.next_ref_state = self.curr_path.popleft()
-                        break
-                    else:
-                        continue
 
-        # print(self.next_ref_state, currState)
-        if self.distance(self.next_ref_state, (currState[0][0], currState[0][1])) <= 0.5:
+        dist = self.distance(self.next_ref_state, (int(currState[0][0]), int(currState[0][1])))
+        # print(dist, currState[0], self.next_ref_state)
+        if dist <= 2.5:
             self.next_ref_state = self.curr_path.popleft()
-        
+        if obstacleList:
+            for obs in obstacleList:
+                if self.isInObstacle(self.next_ref_state, obs):
+                    self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
+                    self.curr_path = self.decisionModule.shortestPath[0]
+                    self.next_ref_state = self.curr_path.popleft()
+                    break
+                else:
+                    continue
         # Get the target state from decision module
+        print(self.next_ref_state, self.curr_path)
         refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
 
         if not refState:

@@ -160,6 +160,18 @@ class RRTStar():
         dist =  np.linalg.norm(np.array(node1) - np.array(node2))
         return dist
 
+    def drawPoints(self, path):
+        for point in path:
+            location = carla.Location(point[0], point[1], 0.25)
+            rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+            if point in self.goal_nodes:
+                ccolor = carla.Color(255,255,0,255)
+            else:
+                ccolor = carla.Color(0,0,255,255)
+            box = carla.BoundingBox(location, carla.Vector3D(0.25, 0.30, 0.25))
+            self.world.debug.draw_box(box, rotation, thickness=0.25, color=ccolor, life_time=0)
+
+
     """
         Determines if a node is valid -- meaning it is not in the radius of an obstacle
         Inputs: 
@@ -322,7 +334,7 @@ class RRTStar():
     def nearestNeighbor(self, node):
         # set minimum distance and local variables
         nearest_node = None
-        radius = 5
+        radius = 8.5
         minDist = float("inf")
         # check the distance between input node and all nodes -- return the nearest node
         for n in self.nodes:
@@ -347,12 +359,6 @@ class RRTStar():
     """
     def findGoalRegion(self, node):
     	return self.get_waypoint_box(node)
-
-    # def drawPoints(self, path):
-    #     for point in path:
-    #         location = carla.Location(point[0], point[1], 0)
-    #         color = carla.Color(255, 0, 0, 255)
-    #         self.world.debug.draw_point(location, 3, color, 0)
 
     """
         Create a bounding box region where nodes can be randomly generated and connected
@@ -412,7 +418,7 @@ class RRTStar():
     def shortestPath(self):
         # initialize local variables
         start_node = self.start
-        # end_node = self.goal
+        end_node = None
         unvisited_nodes = self.nodes.copy()  # All nodes are initially unvisited.
         #print("Goal nodes:", self.goal_nodes)
         # Create a dictionary of each node's distance from start_node. We will
@@ -424,7 +430,6 @@ class RRTStar():
         # Initialize previous_node, the dictionary that maps each node to the
         # node it was visited from when the the shortest path to it was found.
         previous_node = {node: None for node in self.nodes}
-
         while unvisited_nodes:
             # Set current_node to the unvisited node with shortest distance
             # calculated so far.
@@ -449,23 +454,25 @@ class RRTStar():
                     previous_node[neighbor] = current_node
 
             if current_node in self.goal_nodes:
-                #print("Reached the end")
                 end_node = current_node
                 break # we've visited the destination node, so we're done
-        #for node in self.nodes:
-        #    for goal_node in self.goal_nodes:
-        #        if goal_node in self.edges[node]:
-        #            print("Edge exists from ", node, " to goal node ", goal_node)
+        for node in self.nodes:
+            for goal_node in self.goal_nodes:
+                if goal_node in self.edges[node]:
+                    print("Edge exists from ", node, " to goal node ", goal_node)
         # To build the path to be returned, we iterate through the nodes from
         # end_node back to start_node. Note the use of a deque, which can
         # appendleft with O(1) performance.
         path = deque()
+        if not end_node:
+            return path
         current_node = end_node
         while previous_node[current_node] is not None:
             path.appendleft(current_node)
             current_node = previous_node[current_node]
         path.appendleft(start_node)
-        print(path)
+        # print(path)
+        self.drawPoints(path)
         return path, distance_from_start[end_node]
             
 
