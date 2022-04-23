@@ -256,6 +256,35 @@ class Controller(object):
         dist =  np.linalg.norm(np.array(node1) - np.array(node2))
         return dist
 
+    def isInBox(self, node, vertices):
+        curr_x = node[0]
+        curr_y = node[1]
+        n = len(vertices)
+        def is_on_right_side(x, y, xy0, xy1):
+            x0, y0 = xy0
+            x1, y1 = xy1 
+            a = float(y1 - y0)
+            b = float(x0 - x1)
+            c = -a*x0 - b*y0
+            val = a*x + b*y + c
+            return val >= 0
+        is_right = [is_on_right_side(curr_x, curr_y, (vertices[i][0], vertices[i][1]), (vertices[(i+1)%n][0],vertices[(i+1)%n][1])) for i in range(n)]
+        all_left = not any (is_right)
+        all_right = all(is_right) 
+        return all_left or all_right 
+
+    def get_obstacle_box(self, obs):
+        v = [] 
+        for vertex in obs.vertices_locations:
+                obs_x = vertex.vertex_location.x
+                obs_y = vertex.vertex_location.y
+                v.append((obs_x, obs_y))
+        return [v[0], v[2], v[6], v[4]] 
+
+    def isInObstacle(self, node, obstacle):
+        obs_v = self.get_obstacle_box(obstacle)
+        return self.isInBox(node, obs_v)
+
     def stop(self):
         return self.controlModule.stop()
 
@@ -266,6 +295,17 @@ class Controller(object):
             self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
             self.curr_path = self.decisionModule.shortestPath[0]
             self.next_ref_state = self.curr_path.popleft()
+            
+            if obstacleList:
+                for obs in obstacleList:
+                    if self.isInObstacle(self.next_ref_state, obs):
+                        self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
+                        self.curr_path = self.decisionModule.shortestPath[0]
+                        self.next_ref_state = self.curr_path.popleft()
+                        break
+                    else:
+                        continue
+
         # print(self.next_ref_state, currState)
         if self.distance(self.next_ref_state, (currState[0][0], currState[0][1])) <= 0.5:
             self.next_ref_state = self.curr_path.popleft()
