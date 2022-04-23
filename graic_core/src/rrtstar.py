@@ -348,6 +348,11 @@ class RRTStar():
     def findGoalRegion(self, node):
     	return self.get_waypoint_box(node)
 
+    # def drawPoints(self, path):
+    #     for point in path:
+    #         location = carla.Location(point[0], point[1], 0)
+    #         color = carla.Color(255, 0, 0, 255)
+    #         self.world.debug.draw_point(location, 3, color, 0)
 
     """
         Create a bounding box region where nodes can be randomly generated and connected
@@ -460,13 +465,7 @@ class RRTStar():
             path.appendleft(current_node)
             current_node = previous_node[current_node]
         path.appendleft(start_node)
-        #print(path)
-        
-        for point in path:
-            location = carla.Location(point[0], point[1], 0)
-            color = carla.Color(255, 0, 0, 255)
-            carla.draw_point(location, 3, color, 0)
-
+        print(path)
         return path, distance_from_start[end_node]
             
 
