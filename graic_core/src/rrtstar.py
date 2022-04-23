@@ -460,7 +460,13 @@ class RRTStar():
             path.appendleft(current_node)
             current_node = previous_node[current_node]
         path.appendleft(start_node)
-        print(path)
+        #print(path)
+        
+        for point in path:
+            location = carla.Location(point[0], point[1], 0)
+            color = carla.Color(255, 0, 0, 255)
+            carla.draw_point(location, 3, color, 0)
+
         return path, distance_from_start[end_node]
             
 
