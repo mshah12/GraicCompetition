@@ -36,19 +36,22 @@ class VehicleDecision():
     def calcRRTStar(self, currState, obstacleList, waypoint, prevWaypoint, lanemarkers):
         i = 0
         # init a new RRT object
+        RRTObject = RRTStar(currState, obstacleList, waypoint, prevWaypoint, lanemarkers)
+        # populate internal variables with left and right lane nodes
+        RRTObject.getLaneEdges()
+        # calculate and store lane equations internally
+        RRTObject.calcLaneEdgeEquation()
         while(1):
-            RRTObject = RRTStar(currState, obstacleList, waypoint, prevWaypoint, lanemarkers)
-            # populate internal variables with left and right lane nodes
-            RRTObject.getLaneEdges()
-            # calculate and store lane equations internally
-            RRTObject.calcLaneEdgeEquation()
             # create RRT Graph with 1000 nodes
-            RRTObject.calcGraph(100)
+            RRTObject.calcGraph(250)
             # get shortest path from start to goal
             self.shortestPath = RRTObject.shortestPath()
+            if len(self.shortestPath) > 0:
+                break 
             print(i)
             i+=1
-            if len(self.shortestPath) > 0:
+            if i > 50:
+                print("Epic fail")
                 break 
 
 
@@ -246,7 +249,6 @@ class Controller(object):
         self.controlModule = VehicleController()
         
         self.nextWaypoint = None 
-        #self.intermediateWaypoints = None 
         self.curr_path = []
         self.next_ref_state = None 
 
@@ -294,28 +296,36 @@ class Controller(object):
 
     def stop(self):
         return self.controlModule.stop()
-
+        
+    def get_waypoint_box(self, waypoint):
+        location = carla.Location(waypoint[0], waypoint[1], waypoint[2])
+        # rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        box = carla.BoundingBox(location, carla.Vector3D(0.5, 6, 3))
+        v = [(n.x, n.y) for n in box.get_local_vertices()]
+        return [v[0], v[2], v[6], v[4]] 
+     
     def execute(self, currState, obstacleList, lane_marker, waypoint):
-        if self.nextWaypoint == None:
+        # needs graph recomputation
+        if self.nextWaypoint != waypoint or self.distance((int(waypoint.location.x), int(waypoint.location.y)), (int(currState[0][0]), int(currState[0][1]))) <= 6:
             self.nextWaypoint = waypoint
-        if len(self.curr_path) == 0 or self.distance((int(waypoint.location.x), int(waypoint.location.y)), (int(currState[0][0]), int(currState[0][1]))) <= 6:
             self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
             self.curr_path = self.decisionModule.shortestPath[0]
             self.next_ref_state = self.curr_path.popleft()
-
-        dist = self.distance(self.next_ref_state, (int(currState[0][0]), int(currState[0][1])))
+        
+        crossed = self.isInBox((currState[0][0],currState[0][1]), self.get_waypoint_box((self.next_ref_state[0],self.next_ref_state[1],3)))
         # print(dist, currState[0], self.next_ref_state)
-        if dist <= 2.5:
+        if crossed and len(self.curr_path) >= 1:
             self.next_ref_state = self.curr_path.popleft()
-        if obstacleList:
-            for obs in obstacleList:
-                if self.isInObstacle(self.next_ref_state, obs):
-                    self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
-                    self.curr_path = self.decisionModule.shortestPath[0]
-                    self.next_ref_state = self.curr_path.popleft()
-                    break
-                else:
-                    continue
+        #if obstacleList:
+        #    for obs in obstacleList:
+        #       if self.isInObstacle(self.next_ref_state, obs):
+         #          print("Popped node in obstacle, recomputing...")
+        #            self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
+        #            self.curr_path = self.decisionModule.shortestPath[0]
+        #            self.next_ref_state = self.curr_path.popleft()
+        #            break
+        #        else:
+        #            continue
         # Get the target state from decision module
         print(self.next_ref_state, self.curr_path)
         refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)

@@ -189,6 +189,7 @@ class RRTStar():
             False: if node is within the radius of an obstacle
     """
     def isValidNode(self, node):
+        return True 
         for obs in self.obstacleList:
             if self.isInObstacle(node, obs):
                 return False 
@@ -220,7 +221,7 @@ class RRTStar():
     """     
     def get_waypoint_box(self, waypoint):
         location = carla.Location(waypoint.location.x, waypoint.location.y, waypoint.location.z)
-        rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        # rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
         box = carla.BoundingBox(location, carla.Vector3D(3, 6, 3))
         v = [(n.x, n.y) for n in box.get_local_vertices()]
         return [v[0], v[2], v[6], v[4]] 
@@ -331,22 +332,16 @@ class RRTStar():
         Outputs: 
             nearest_node: the node that is nearest to the input node
     """
-    def nearestNeighbor(self, node):
+    def nearestNeighbor(self, node, radius=7.5):
         # set minimum distance and local variables
         nearest_node = None
-        radius = 8.5
         minDist = float("inf")
-        # check the distance between input node and all nodes -- return the nearest node
-        for n in self.nodes:
+        for n in self.nodes: 
             if node != n:
-                currDist = self.distance(node, n)
-                if currDist < minDist and currDist <= radius:
-                    # if new edge would pass through an obstacle, continue
-                    if self.isThruObstacle(node, n):
-                        continue
-                    else:
-                        minDist = currDist
-                        nearest_node = n
+                dist = self.distance(node, n)
+                if dist < minDist and dist < radius: 
+                    minDist = dist 
+                    nearest_node = n 
         return nearest_node
 
 
@@ -366,19 +361,17 @@ class RRTStar():
         Outputs: None
     """
     def calcGraph(self, max_iter):
-        # add current nodes to the graph
+        # always have a start node in the graph and an end node in the graph 
         self.nodes.add(self.start)
         self.edges[self.start] = set()
-        goal_region = self.findGoalRegion(self.goal)
-
-        # NOTE:
-        # Ideally, we want to extend the goal node into a line and add all points on the line into the graph's intial nodes as the goal nodes
-        # For now, I'm just adding one goal node for simplicity's sake
         
+        goal_region = self.findGoalRegion(self.goal)
+  
         x_bound1 = self.goal.location.x 
         x_bound2 = self.start[0] 
         x_min = min(x_bound1, x_bound2)
         x_max = max(x_bound1, x_bound2) 
+
         # compute y min and max
         # generate max_iter number of nodes
         for i in range(max_iter):
@@ -388,19 +381,17 @@ class RRTStar():
             new_node_y = np.random.randint(min(region_y_min, region_y_max), max(region_y_min, region_y_max))
             # generate new node and check if valid
             new_node = (new_node_x, new_node_y)
-            new_is_in_goal = False
-            if self.isValidNode(new_node):
+            valid = self.isValidNode(new_node)
+            if valid:
                 # if node is valid, connect to the nearest neighbor if applicible
                 self.nodes.add(new_node)
+                print(len(self.nodes))
                 if new_node not in self.edges:
                     self.edges[new_node] = set()
                 nearest_node = self.nearestNeighbor(new_node)
                 if self.isInBox(new_node, goal_region):
                     self.goal_nodes.add(new_node)
-                    new_is_in_goal = True 
                 if nearest_node is not None:
-                    if new_is_in_goal and self.isInBox(nearest_node, goal_region):
-                        continue
                     self.edges[new_node].add(nearest_node)
                     self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
     
@@ -452,20 +443,23 @@ class RRTStar():
                 if new_path < distance_from_start[neighbor]:
                     distance_from_start[neighbor] = new_path
                     previous_node[neighbor] = current_node
-
+            print("Goal nodes: ", self.goal_nodes, " ", current_node)
             if current_node in self.goal_nodes:
                 end_node = current_node
                 break # we've visited the destination node, so we're done
-        for node in self.nodes:
-            for goal_node in self.goal_nodes:
-                if goal_node in self.edges[node]:
-                    print("Edge exists from ", node, " to goal node ", goal_node)
+        #for node in self.nodes:
+        #    for goal_node in self.goal_nodes:
+        #        if goal_node in self.edges[node]:
+        #            print("Edge exists from ", node, " to goal node ", goal_node)
         # To build the path to be returned, we iterate through the nodes from
         # end_node back to start_node. Note the use of a deque, which can
         # appendleft with O(1) performance.
         path = deque()
         if not end_node:
-            return path
+            path.appendleft(start_node) 
+            path.append((self.goal.location.x, self.goal.location.y))
+            self.drawPoints(path)
+            return path, 1 
         current_node = end_node
         while previous_node[current_node] is not None:
             path.appendleft(current_node)
