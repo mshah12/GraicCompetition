@@ -32,11 +32,13 @@ class VehicleDecision():
         # global vars for RRT algo
         self.shortestPath = []
         self.prevWaypoint = None
+        self.rrt_map = None
 
     def calcRRTStar(self, currState, obstacleList, waypoint, prevWaypoint, lanemarkers):
         i = 0
         # init a new RRT object
         RRTObject = RRTStar(currState, obstacleList, waypoint, prevWaypoint, lanemarkers)
+        self.rrt_map = RRTObject.map
         # populate internal variables with left and right lane nodes
         RRTObject.getLaneEdges()
         # calculate and store lane equations internally
@@ -48,12 +50,14 @@ class VehicleDecision():
             self.shortestPath = RRTObject.shortestPath()
             if len(self.shortestPath) > 0:
                 break 
-            print(i)
+            #print(i)
             i+=1
             if i > 50:
                 print("Epic fail")
                 break 
 
+    def get_map(self):
+        return self.rrt_map
 
     def get_ref_state(self, currState, obstacleList, lane_marker, waypoint):
         """
@@ -247,7 +251,7 @@ class Controller(object):
         super(Controller, self).__init__()
         self.decisionModule = VehicleDecision()
         self.controlModule = VehicleController()
-        
+        self.map = None 
         self.nextWaypoint = None 
         self.curr_path = []
         self.next_ref_state = None 
@@ -299,35 +303,38 @@ class Controller(object):
         
     def get_waypoint_box(self, waypoint):
         location = carla.Location(waypoint[0], waypoint[1], waypoint[2])
-        # rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        # print(rotation)
         box = carla.BoundingBox(location, carla.Vector3D(0.5, 6, 3))
         v = [(n.x, n.y) for n in box.get_local_vertices()]
         return [v[0], v[2], v[6], v[4]] 
      
     def execute(self, currState, obstacleList, lane_marker, waypoint):
         # needs graph recomputation
-        if self.nextWaypoint != waypoint or self.distance((int(waypoint.location.x), int(waypoint.location.y)), (int(currState[0][0]), int(currState[0][1]))) <= 6:
+        if self.nextWaypoint != waypoint:
             self.nextWaypoint = waypoint
             self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
+            if not self.map:
+                self.map = self.decisionModule.get_map()
             self.curr_path = self.decisionModule.shortestPath[0]
             self.next_ref_state = self.curr_path.popleft()
-        
-        crossed = self.isInBox((currState[0][0],currState[0][1]), self.get_waypoint_box((self.next_ref_state[0],self.next_ref_state[1],3)))
-        # print(dist, currState[0], self.next_ref_state)
+
+        target_point_box = self.get_waypoint_box((self.next_ref_state[0],self.next_ref_state[1],3))
+
+        waypoint_location = carla.Location(self.next_ref_state[0],self.next_ref_state[1],3)
+        waypoint_rotation = self.map.get_waypoint(waypoint_location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        waypoint_box = carla.BoundingBox(waypoint_location, carla.Vector3D(1.5, 6, 3))
+
+        # get car's world point 
+        cars_location = carla.Location(currState[0][0],currState[0][1], 3)
+        cars_rotation = self.map.get_waypoint(cars_location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        cars_transformation = carla.Transform(cars_location, cars_rotation)
+        cars_transformation.transform(cars_location)
+        crossed = waypoint_box.contains(cars_location, carla.Transform(waypoint_location, waypoint_rotation))
+        print(waypoint, self.next_ref_state, self.curr_path, crossed)
         if crossed and len(self.curr_path) >= 1:
             self.next_ref_state = self.curr_path.popleft()
-        #if obstacleList:
-        #    for obs in obstacleList:
-        #       if self.isInObstacle(self.next_ref_state, obs):
-         #          print("Popped node in obstacle, recomputing...")
-        #            self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
-        #            self.curr_path = self.decisionModule.shortestPath[0]
-        #            self.next_ref_state = self.curr_path.popleft()
-        #            break
-        #        else:
-        #            continue
-        # Get the target state from decision module
-        print(self.next_ref_state, self.curr_path)
+
         refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
 
         if not refState:

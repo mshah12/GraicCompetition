@@ -53,6 +53,16 @@ class RRTStar():
         self.world = self.client.get_world()
         self.map = self.world.get_map()
 
+
+    """
+         Callback function called when rospy subscription is used. Does nothing...
+         Inputs: None
+         Outputs: None
+    """
+    def laneNodesCallback(self):
+        # DO NOTHING -- NEED AS CALLBACK PARAMETER FOR ROS SUBSCRIPTION
+        return
+
     """
         Get indeces of lane markers that correspond to the previous and current waypoint
         Inputs: bounding boxes and transforms
@@ -355,6 +365,26 @@ class RRTStar():
     def findGoalRegion(self, node):
     	return self.get_waypoint_box(node)
 
+    def get_world_from_local(self, node): 
+        location = carla.Location(node[0],node[1], 3)
+        rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        transformation = carla.Transform(location, rotation)
+        transformation.transform(location)
+        return location
+
+    def get_bounding_box(self, node, vector3d):
+        location = carla.Location(node[0],node[1],3)
+        rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        waypoint_box = carla.BoundingBox(location, vector3d)
+        return (waypoint_box, location, rotation)
+
+    def isInGoalRegion(self, node, goal_point): 
+        world_node = self.get_world_from_local(node)
+        goal_box, goal_loc, goal_rot = self.get_bounding_box(goal_point, carla.Vector3D(0.5, 6, 3))
+        self.world.debug.draw_box(goal_box, goal_rot, thickness=0.25, color=carla.Color(255,255,0,255), life_time=0)
+        return goal_box.contains(world_node, carla.Transform(goal_loc, goal_rot))
+        
+        
     """
         Create a bounding box region where nodes can be randomly generated and connected
         Inputs: None
@@ -364,8 +394,6 @@ class RRTStar():
         # always have a start node in the graph and an end node in the graph 
         self.nodes.add(self.start)
         self.edges[self.start] = set()
-        
-        goal_region = self.findGoalRegion(self.goal)
   
         x_bound1 = self.goal.location.x 
         x_bound2 = self.start[0] 
@@ -385,18 +413,18 @@ class RRTStar():
             if valid:
                 # if node is valid, connect to the nearest neighbor if applicible
                 self.nodes.add(new_node)
-                print(len(self.nodes))
+                # print(len(self.nodes))
                 if new_node not in self.edges:
                     self.edges[new_node] = set()
                 nearest_node = self.nearestNeighbor(new_node)
-                if self.isInBox(new_node, goal_region):
+                if self.isInGoalRegion(new_node, (self.goal.location.x, self.goal.location.y)):
                     self.goal_nodes.add(new_node)
                 if nearest_node is not None:
-                    self.edges[new_node].add(nearest_node)
+                    self.edges[new_node].add(nearest_node)  
                     self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
-    
+        
         # connect the start node to the rest of the graph 
-        nearest_node = self.nearestNeighbor(self.start) 
+        nearest_node = self.nearestNeighbor(self.start,radius=100) 
         self.edges[self.start].add(nearest_node)
         self.weights[(self.start, nearest_node)] = self.distance(self.start, nearest_node)
 
