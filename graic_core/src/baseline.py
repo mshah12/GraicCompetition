@@ -45,7 +45,7 @@ class VehicleDecision():
         RRTObject.calcLaneEdgeEquation()
         while(1):
             # create RRT Graph with 1000 nodes
-            RRTObject.calcGraph(250)
+            RRTObject.calcGraph(50)
             # get shortest path from start to goal
             self.shortestPath = RRTObject.shortestPath()
             if len(self.shortestPath) > 0:
@@ -315,7 +315,8 @@ class Controller(object):
         self.prevWaypoint = (currState[0][0], currState[0][1])
         # only update if we passed it
         if self.nextWaypoint != waypoint:
-            print("reached: ", (self.nextWaypoint.location.x, self.nextWaypoint.location.y))
+            if self.nextWaypoint:
+                print("reached: ", (self.nextWaypoint.location.x, self.nextWaypoint.location.y))
             self.nextWaypoint = waypoint
             self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker)
 

@@ -18,6 +18,13 @@ from collections import deque
 """
 class RRTStar():
     def __init__(self, currState, obstacleList, waypoint, prevWaypoint, lane_info):
+        # rospy.init_node('race_run')
+        self.host = rospy.get_param('~host', 'localhost')
+        self.port = rospy.get_param('~port', 2000)
+
+        self.client = carla.Client(self.host, self.port)
+        self.world = self.client.get_world()
+        self.map = self.world.get_map()
         # list of nodes in the graph -- will be in tuple form (x,y)
         # list of edges in the graph -- key will be a tuple of (node1,node2) and the value will be the cost/weight of the edge
         self.nodes = set()
@@ -28,12 +35,15 @@ class RRTStar():
         # starting node is the car's current (x,y)
         # goal node is the waypoint's (x,y)
         t = self.get_world_from_local((int(currState[0][0]), int(currState[0][1])))
-        self.start = (int(t.location.x), int(t.location.y))
+        self.start = (int(t.x), int(t.y))
         self.goal = waypoint
         self.goal_box, self.goal_location, self.goal_rotation = self.get_bounding_box((self.goal.location.x, self.goal.location.y), carla.Vector3D(1,6,3))
         self.goal_vertices = self.goal_box.get_world_vertices(carla.Transform(self.goal_location, self.goal_rotation))
         self.testflag = False
 
+        self.x_off = currState[0][0] - self.start[0]
+        self.y_off =  currState[0][1] - self.start[1]
+        print(self.x_off, self.y_off)
         # list of obstacles
         self.obstacleList = obstacleList
         # placeholder global variables for later use
@@ -50,14 +60,6 @@ class RRTStar():
         # waypoint stuff
         self.waypoint = waypoint
         self.prevWaypoint = prevWaypoint
-
-        # rospy.init_node('race_run')
-        self.host = rospy.get_param('~host', 'localhost')
-        self.port = rospy.get_param('~port', 2000)
-
-        self.client = carla.Client(self.host, self.port)
-        self.world = self.client.get_world()
-        self.map = self.world.get_map()
 
 
     """
@@ -178,14 +180,11 @@ class RRTStar():
 
     def drawPoints(self, path):
         for point in path:
-            location = carla.Location(point[0], point[1], 0.25)
-            rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
-            if point in self.goal_nodes:
-                ccolor = carla.Color(255,255,0,255)
-            else:
-                ccolor = carla.Color(0,0,255,255)
-            box = carla.BoundingBox(location, carla.Vector3D(0.25, 0.30, 0.25))
-            self.world.debug.draw_box(box, rotation, thickness=0.25, color=ccolor, life_time=0)
+            location = carla.Location(point[0] + self.x_off, point[1] + self.y_off, 0.1)
+            # rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).rotation
+            ccolor = carla.Color(0,0,255,255)
+            # box = carla.BoundingBox(location, carla.Vector3D(0.25, 0.30, 0.25))
+            self.world.debug.draw_point(location, size=0.1, color=ccolor, life_time=0)
 
     """
         Determines if a node is valid -- meaning it is not in the radius of an obstacle
@@ -367,7 +366,7 @@ class RRTStar():
         self.world.debug.draw_box(goal_box, goal_rot, thickness=0.25, color=carla.Color(255,255,0,255), life_time=0)
         return goal_box.contains(world_node, carla.Transform(goal_loc, goal_rot))
         
-    def uniform_triangle(u, v):
+    def uniform_triangle(self,u, v):
         s = random.random()
         t = random.random()
         in_triangle = s + t <= 1
@@ -381,23 +380,29 @@ class RRTStar():
     def calcGraph(self, max_iter):
         self.nodes.add(self.start)
         self.edges[self.start] = set()
-        
-        p1 = [self.start[0], self.start[1]]
-        p2 = [int(self.goal_vertices[6].location.x), int(self.goal_vertices[6].location.y)]
-        p3 = [int(self.goal_vertices[4].location.x), int(self.goal_vertices[4].location.y)]
+        p1 = np.array([self.start[0], self.start[1]])
+        p2 = np.array([self.goal_vertices[6].x, self.goal_vertices[6].y])
+        p3 = np.array([self.goal_vertices[4].x, self.goal_vertices[4].y])
         u = p2 - p1 
         v = p3 - p1 
         print(p1, p2, p3, u, v)
         for i in range(max_iter):
             p = self.uniform_triangle(u, v)
             p += p1 
-            new_node = (int(p[0]),int(p[1]))
+            new_node = (p[0],p[1])
             self.nodes.add(new_node)
             if new_node not in self.edges: 
                 self.edges[new_node] = set()
 
         if not self.testflag: 
             print(self.nodes)
+            self.drawPoints(self.nodes)
+            fig, ax = plt.subplots()
+            t = list(self.nodes)
+            x = [n[0] for n in t]
+            y = [n[1] for n in t]
+            ax.scatter(x,y, s=1)
+            fig.savefig("test.png", dpi=200)
             self.testflag = True
                         
     # def calcGraph(self, max_iter):
