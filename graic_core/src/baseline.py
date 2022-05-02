@@ -255,6 +255,8 @@ class Controller(object):
         self.nextWaypoint = None 
         self.curr_path = []
         self.next_ref_state = None 
+        self.prevWaypoint = None 
+        self.nextWaypoint = None 
 
     """
         Determines the distance between two nodes -- helper function
@@ -309,34 +311,44 @@ class Controller(object):
         v = [(n.x, n.y) for n in box.get_local_vertices()]
         return [v[0], v[2], v[6], v[4]] 
      
-    def execute(self, currState, obstacleList, lane_marker, waypoint):
-        # needs graph recomputation
+    def execute(self, currState, obstacleList, lane_marker, waypoint): 
+        self.prevWaypoint = (currState[0][0], currState[0][1])
+        # only update if we passed it
         if self.nextWaypoint != waypoint:
+            print("reached: ", (self.nextWaypoint.location.x, self.nextWaypoint.location.y))
             self.nextWaypoint = waypoint
-            self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
-            if not self.map:
-                self.map = self.decisionModule.get_map()
-            self.curr_path = self.decisionModule.shortestPath[0]
-            self.next_ref_state = self.curr_path.popleft()
+            self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker)
 
-        target_point_box = self.get_waypoint_box((self.next_ref_state[0],self.next_ref_state[1],3))
 
-        waypoint_location = carla.Location(self.next_ref_state[0],self.next_ref_state[1],3)
-        waypoint_rotation = self.map.get_waypoint(waypoint_location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
-        waypoint_box = carla.BoundingBox(waypoint_location, carla.Vector3D(1.5, 6, 3))
 
-        # get car's world point 
-        cars_location = carla.Location(currState[0][0],currState[0][1], 3)
-        cars_rotation = self.map.get_waypoint(cars_location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
-        cars_transformation = carla.Transform(cars_location, cars_rotation)
-        cars_transformation.transform(cars_location)
-        crossed = waypoint_box.contains(cars_location, carla.Transform(waypoint_location, waypoint_rotation))
-        print(waypoint, self.next_ref_state, self.curr_path, crossed)
-        if crossed and len(self.curr_path) >= 1:
-            self.next_ref_state = self.curr_path.popleft()
+    # def execute(self, currState, obstacleList, lane_marker, waypoint):
+    #     # needs graph recomputation
+    #     if self.nextWaypoint != waypoint:
+    #         self.nextWaypoint = waypoint
+    #         self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
+    #         if not self.map:
+    #             self.map = self.decisionModule.get_map()
+    #         self.curr_path = self.decisionModule.shortestPath[0]
+    #         self.next_ref_state = self.curr_path.popleft()
 
-        refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
+    #     target_point_box = self.get_waypoint_box((self.next_ref_state[0],self.next_ref_state[1],3))
 
-        if not refState:
-            return None
-        return self.controlModule.execute(currState, refState)
+    #     waypoint_location = carla.Location(self.next_ref_state[0],self.next_ref_state[1],3)
+    #     waypoint_rotation = self.map.get_waypoint(waypoint_location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+    #     waypoint_box = carla.BoundingBox(waypoint_location, carla.Vector3D(1.5, 6, 3))
+
+    #     # get car's world point 
+    #     cars_location = carla.Location(currState[0][0],currState[0][1], 3)
+    #     cars_rotation = self.map.get_waypoint(cars_location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+    #     cars_transformation = carla.Transform(cars_location, cars_rotation)
+    #     cars_transformation.transform(cars_location)
+    #     crossed = waypoint_box.contains(cars_location, carla.Transform(waypoint_location, waypoint_rotation))
+    #     print(waypoint, self.next_ref_state, self.curr_path, crossed)
+    #     if crossed and len(self.curr_path) >= 1:
+    #         self.next_ref_state = self.curr_path.popleft()
+
+    #     refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
+
+    #     if not refState:
+    #         return None
+    #     return self.controlModule.execute(currState, refState)

@@ -3,6 +3,8 @@ import carla
 import rospy
 import math
 import numpy as np
+import matplotlib.pyplot as plt
+import random
 from graic_msgs.msg import LaneList
 from collections import deque
 
@@ -25,9 +27,13 @@ class RRTStar():
         
         # starting node is the car's current (x,y)
         # goal node is the waypoint's (x,y)
-        self.start = (int(currState[0][0]), int(currState[0][1]))
+        t = self.get_world_from_local((int(currState[0][0]), int(currState[0][1])))
+        self.start = (int(t.location.x), int(t.location.y))
         self.goal = waypoint
-        
+        self.goal_box, self.goal_location, self.goal_rotation = self.get_bounding_box((self.goal.location.x, self.goal.location.y), carla.Vector3D(1,6,3))
+        self.goal_vertices = self.goal_box.get_world_vertices(carla.Transform(self.goal_location, self.goal_rotation))
+        self.testflag = False
+
         # list of obstacles
         self.obstacleList = obstacleList
         # placeholder global variables for later use
@@ -181,15 +187,6 @@ class RRTStar():
             box = carla.BoundingBox(location, carla.Vector3D(0.25, 0.30, 0.25))
             self.world.debug.draw_box(box, rotation, thickness=0.25, color=ccolor, life_time=0)
 
-
-    """
-        Determines if a node is valid -- meaning it is not in the radius of an obstacle
-        Inputs: 
-            node: the node to check
-        Outputs: 
-            True: if node is valid
-            False: if node is within the radius of an obstacle
-    """
     """
         Determines if a node is valid -- meaning it is not in the radius of an obstacle
         Inputs: 
@@ -199,7 +196,6 @@ class RRTStar():
             False: if node is within the radius of an obstacle
     """
     def isValidNode(self, node):
-        return True 
         for obs in self.obstacleList:
             if self.isInObstacle(node, obs):
                 return False 
@@ -210,7 +206,7 @@ class RRTStar():
         Inputs: 
             node: object of interest
         Outputs:
-            list: of (x,y) points representing the corners of the bounding box of an object
+            list: of (x,y) points representing the corners of the bounding box of an object in world coordinates 
             in the form [ul, ur, bl, br]
     """     
     def get_obstacle_box(self, obs):
@@ -219,22 +215,25 @@ class RRTStar():
                 obs_x = vertex.vertex_location.x
                 obs_y = vertex.vertex_location.y
                 v.append((obs_x, obs_y))
-        return [v[0], v[2], v[6], v[4]] 
+        v0 = get_world_from_local(v[0])
+        v2 = get_world_from_local(v[2])
+        v6 = get_world_from_local(v[6])
+        v4 = get_world_from_local(v[4])
+        return [(v0.location.x,v0.location.y), (v2.location.x,v2.location.y),
+                (v6.location.x,v6.location.y), (v4.location.x,v4.location.y)] 
 
     """
-        Returns a list of 4 points representing the top-down view of an object's bounding box 
+        Determines if a point lies within an obstacle
         Inputs: 
-            node: object of interest
-        Outputs:
-            list: of (x,y) points representing the corners of the bounding box of an object
-            in the form [ul, ur, br, bl]
-    """     
-    def get_waypoint_box(self, waypoint):
-        location = carla.Location(waypoint.location.x, waypoint.location.y, waypoint.location.z)
-        # rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
-        box = carla.BoundingBox(location, carla.Vector3D(3, 6, 3))
-        v = [(n.x, n.y) for n in box.get_local_vertices()]
-        return [v[0], v[2], v[6], v[4]] 
+            node: node of interest
+            obstacle: obstacle of interest
+        Outputs: 
+            True: if node is within an obstacle
+            False: if node is not within an obstacle 
+    """
+    def isInObstacle(self, node, obstacle):
+        obs_v = self.get_obstacle_box(obstacle)
+        return self.isInBox(node, obs_v)
 
     """
         Determines if a point lies within a box or not  
@@ -262,19 +261,6 @@ class RRTStar():
         all_left = not any (is_right)
         all_right = all(is_right) 
         return all_left or all_right 
-
-    """
-        Determines if a point lies within an obstacle
-        Inputs: 
-            node: node of interest
-            obstacle: obstacle of interest
-        Outputs: 
-            True: if node is within an obstacle
-            False: if node is not within an obstacle 
-    """
-    def isInObstacle(self, node, obstacle):
-        obs_v = self.get_obstacle_box(obstacle)
-        return self.isInBox(node, obs_v)
         
     """
         Determines if 2 lines intersect with each other 
@@ -362,9 +348,6 @@ class RRTStar():
         Outputs: 
             goal_region: 4 point box
     """
-    def findGoalRegion(self, node):
-    	return self.get_waypoint_box(node)
-
     def get_world_from_local(self, node): 
         location = carla.Location(node[0],node[1], 3)
         rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
@@ -377,61 +360,83 @@ class RRTStar():
         rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
         waypoint_box = carla.BoundingBox(location, vector3d)
         return (waypoint_box, location, rotation)
-
+    
     def isInGoalRegion(self, node, goal_point): 
         world_node = self.get_world_from_local(node)
         goal_box, goal_loc, goal_rot = self.get_bounding_box(goal_point, carla.Vector3D(0.5, 6, 3))
         self.world.debug.draw_box(goal_box, goal_rot, thickness=0.25, color=carla.Color(255,255,0,255), life_time=0)
         return goal_box.contains(world_node, carla.Transform(goal_loc, goal_rot))
         
-        
+    def uniform_triangle(u, v):
+        s = random.random()
+        t = random.random()
+        in_triangle = s + t <= 1
+        p = s * u + t * v if in_triangle else (1 - s) * u + (1 - t) * v
+        return p
     """
         Create a bounding box region where nodes can be randomly generated and connected
         Inputs: None
         Outputs: None
     """
     def calcGraph(self, max_iter):
-        # always have a start node in the graph and an end node in the graph 
         self.nodes.add(self.start)
         self.edges[self.start] = set()
-  
-        x_bound1 = self.goal.location.x 
-        x_bound2 = self.start[0] 
-        x_min = min(x_bound1, x_bound2)
-        x_max = max(x_bound1, x_bound2) 
-
-        # compute y min and max
-        # generate max_iter number of nodes
-        for i in range(max_iter):
-            new_node_x = np.random.randint(x_min, x_max)
-            region_y_min = (self.leftLaneEq[0] * (new_node_x ** 2)) + (self.leftLaneEq[1] * new_node_x) + (self.leftLaneEq[2])
-            region_y_max = (self.rightLaneEq[0] * (new_node_x ** 2)) + (self.rightLaneEq[1] * new_node_x) + (self.rightLaneEq[2])
-            new_node_y = np.random.randint(min(region_y_min, region_y_max), max(region_y_min, region_y_max))
-            # generate new node and check if valid
-            new_node = (new_node_x, new_node_y)
-            valid = self.isValidNode(new_node)
-            if valid:
-                # if node is valid, connect to the nearest neighbor if applicible
-                self.nodes.add(new_node)
-                # print(len(self.nodes))
-                if new_node not in self.edges:
-                    self.edges[new_node] = set()
-                nearest_node = self.nearestNeighbor(new_node)
-                if self.isInGoalRegion(new_node, (self.goal.location.x, self.goal.location.y)):
-                    self.goal_nodes.add(new_node)
-                if nearest_node is not None:
-                    self.edges[new_node].add(nearest_node)  
-                    self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
         
-        # connect the start node to the rest of the graph 
-        nearest_node = self.nearestNeighbor(self.start,radius=100) 
-        self.edges[self.start].add(nearest_node)
-        self.weights[(self.start, nearest_node)] = self.distance(self.start, nearest_node)
+        p1 = [self.start[0], self.start[1]]
+        p2 = [int(self.goal_vertices[6].location.x), int(self.goal_vertices[6].location.y)]
+        p3 = [int(self.goal_vertices[4].location.x), int(self.goal_vertices[4].location.y)]
+        u = p2 - p1 
+        v = p3 - p1 
+        print(p1, p2, p3, u, v)
+        for i in range(max_iter):
+            p = self.uniform_triangle(u, v)
+            p += p1 
+            new_node = (int(p[0]),int(p[1]))
+            self.nodes.add(new_node)
+            if new_node not in self.edges: 
+                self.edges[new_node] = set()
 
-        # print("Nodes: ", self.nodes)
-        #print("---------------------------------------------------------------------------------------------------------") 
-        #print("Edges: ", self.edges)
-                    
+        if not self.testflag: 
+            print(self.nodes)
+            self.testflag = True
+                        
+    # def calcGraph(self, max_iter):
+    #     # always have a start node in the graph and an end node in the graph 
+    #     self.nodes.add(self.start)
+    #     self.edges[self.start] = set()
+  
+    #     x_bound1 = self.goal.location.x 
+    #     x_bound2 = self.start[0] 
+    #     x_min = min(x_bound1, x_bound2)
+    #     x_max = max(x_bound1, x_bound2) 
+
+    #     # compute y min and max
+    #     # generate max_iter number of nodes
+    #     for i in range(max_iter):
+    #         new_node_x = np.random.randint(x_min, x_max)
+    #         region_y_min = (self.leftLaneEq[0] * (new_node_x ** 2)) + (self.leftLaneEq[1] * new_node_x) + (self.leftLaneEq[2])
+    #         region_y_max = (self.rightLaneEq[0] * (new_node_x ** 2)) + (self.rightLaneEq[1] * new_node_x) + (self.rightLaneEq[2])
+    #         new_node_y = np.random.randint(min(region_y_min, region_y_max), max(region_y_min, region_y_max))
+    #         # generate new node and check if valid
+    #         new_node = (new_node_x, new_node_y)
+    #         valid = self.isValidNode(new_node)
+    #         if valid:
+    #             # if node is valid, connect to the nearest neighbor if applicible
+    #             self.nodes.add(new_node)
+    #             # print(len(self.nodes))
+    #             if new_node not in self.edges:
+    #                 self.edges[new_node] = set()
+    #             nearest_node = self.nearestNeighbor(new_node)
+    #             if self.isInGoalRegion(new_node, (self.goal.location.x, self.goal.location.y)):
+    #                 self.goal_nodes.add(new_node)
+    #             if nearest_node is not None:
+    #                 self.edges[new_node].add(nearest_node)  
+    #                 self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
+        
+    #     # connect the start node to the rest of the graph 
+    #     nearest_node = self.nearestNeighbor(self.start,radius=100) 
+    #     self.edges[self.start].add(nearest_node)
+    #     self.weights[(self.start, nearest_node)] = self.distance(self.start, nearest_node)
 
     # https://github.com/dmahugh/dijkstra-algorithm/blob/master/dijkstra_algorithm.py
     def shortestPath(self):
