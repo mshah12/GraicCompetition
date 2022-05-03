@@ -41,7 +41,8 @@ class RRTStar():
         # goal waypoint (i.e. the center of the green bounding box)
         self.goal = waypoint
         self.goal_box, self.goal_location, self.goal_rotation = self.get_bounding_box((self.goal.location.x, self.goal.location.y), carla.Vector3D(1, 6, 3))
-        self.goal_vertices = self.goal_box.get_world_vertices(carla.Transform(self.goal_location, self.goal_rotation))
+        self.goal_transform = carla.Transform(self.goal_location, self.goal_rotation)
+        self.goal_vertices = self.goal_box.get_world_vertices(self.goal_transform)
         # flag used to print out triangle sampling 
         self.testflag = False
 
@@ -272,13 +273,11 @@ class RRTStar():
         Outputs: 
             True if target node is in waypoint's goal
     """
-    def isInGoalRegion(self, node, goal_node):
+    def isInGoalRegion(self, node):
         world_node = self.get_world_from_local(node)
-        goal_box, goal_loc, goal_rot = self.get_bounding_box(
-            goal_node, carla.Vector3D(0.5, 6, 3))
-        self.world.debug.draw_box(goal_box, goal_rot, thickness=0.25, color=carla.Color(
+        self.world.debug.draw_box(self.goal_box, self.goal_rotation, thickness=0.25, color=carla.Color(
             255, 255, 0, 255), life_time=0)
-        return goal_box.contains(world_node, carla.Transform(goal_loc, goal_rot))
+        return self.goal_box.contains(world_node, self.goal_transform)
 
     def uniform_triangle(self, u, v):
         s = random.random()
@@ -305,9 +304,20 @@ class RRTStar():
             p = self.uniform_triangle(u, v)
             p += p1
             new_node = (p[0], p[1])
-            self.nodes.add(new_node)
-            if new_node not in self.edges:
-                self.edges[new_node] = set()
+            # make sure node isn't in obstacle
+            if self.isValidNode(new_node):
+                self.nodes.add(new_node)
+                if new_node not in self.edges:
+                    self.edges[new_node] = set()
+                nearest_node = self.nearestNeighbor(new_node,radius=1)
+                # make sure (new_node, nearest_node) doesn't cross an obstacle
+                if not self.isThruObstacle(new_node, nearest_node):
+                    self.edges[new_node].add(nearest_node)
+                # add to goal set if new_node is in goal region
+                if self.isInGoalRegion(new_node):
+                    self.goal_nodes.append(new_node)
+        # make sure the start node has a nearest neighbor
+        self.edges[self.start].add(self.nearestNeighbor(self.start,radius=5))
 
         if not self.testflag:
             print(self.nodes)
