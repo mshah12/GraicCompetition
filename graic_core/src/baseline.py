@@ -13,6 +13,7 @@ from graic_msgs.msg import LaneInfo
 import carla
 from rrtstar import RRTStar
 
+
 class VehicleDecision():
     def __init__(self):
         self.vehicle_state = 'straight'
@@ -37,7 +38,8 @@ class VehicleDecision():
     def calcRRTStar(self, currState, obstacleList, waypoint, prevWaypoint, lanemarkers):
         i = 0
         # init a new RRT object
-        RRTObject = RRTStar(currState, obstacleList, waypoint, prevWaypoint, lanemarkers)
+        RRTObject = RRTStar(currState, obstacleList,
+                            waypoint, prevWaypoint, lanemarkers)
         self.rrt_map = RRTObject.map
         # populate internal variables with left and right lane nodes
         RRTObject.getLaneEdges()
@@ -49,12 +51,12 @@ class VehicleDecision():
             # get shortest path from start to goal
             self.shortestPath = RRTObject.shortestPath()
             if len(self.shortestPath) > 0:
-                break 
-            #print(i)
-            i+=1
+                break
+            # print(i)
+            i += 1
             if i > 50:
                 print("Epic fail")
-                break 
+                break
 
     def get_map(self):
         return self.rrt_map
@@ -236,7 +238,7 @@ class VehicleController():
         # Checking if the vehicle need to stop
         if target_v > 0:
             v = xError * k_s + vError * k_ds
-            #Send computed control input to vehicle
+            # Send computed control input to vehicle
             newAckermannCmd = AckermannDrive()
             newAckermannCmd.speed = v
             newAckermannCmd.steering_angle = delta
@@ -247,109 +249,29 @@ class VehicleController():
 
 class Controller(object):
     """docstring for Controller"""
+
     def __init__(self):
         super(Controller, self).__init__()
         self.decisionModule = VehicleDecision()
         self.controlModule = VehicleController()
-        self.map = None 
-        self.nextWaypoint = None 
+        self.map = None
+        self.nextWaypoint = None
         self.curr_path = []
-        self.next_ref_state = None 
-        self.prevWaypoint = None 
-        self.nextWaypoint = None 
-
-    """
-        Determines the distance between two nodes -- helper function
-        Inputs: 
-            node1: the start node
-            node2: the end node
-        Outputs: 
-            dist: the distance between node1 and node2
-    """
-    def distance(self, node1, node2):
-        x1, y1 = float(node1[0]), float(node1[1])
-        x2, y2 = float(node2[0]), float(node2[1])
-        return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-
-    def isInBox(self, node, vertices):
-        curr_x = node[0]
-        curr_y = node[1]
-        n = len(vertices)
-        def is_on_right_side(x, y, xy0, xy1):
-            x0, y0 = xy0
-            x1, y1 = xy1 
-            a = float(y1 - y0)
-            b = float(x0 - x1)
-            c = -a*x0 - b*y0
-            val = a*x + b*y + c
-            return val >= 0
-        is_right = [is_on_right_side(curr_x, curr_y, (vertices[i][0], vertices[i][1]), (vertices[(i+1)%n][0],vertices[(i+1)%n][1])) for i in range(n)]
-        all_left = not any (is_right)
-        all_right = all(is_right) 
-        return all_left or all_right 
-
-    def get_obstacle_box(self, obs):
-        v = [] 
-        for vertex in obs.vertices_locations:
-                obs_x = vertex.vertex_location.x
-                obs_y = vertex.vertex_location.y
-                v.append((obs_x, obs_y))
-        return [v[0], v[2], v[6], v[4]] 
-
-    def isInObstacle(self, node, obstacle):
-        obs_v = self.get_obstacle_box(obstacle)
-        return self.isInBox(node, obs_v)
+        self.next_ref_state = None
+        self.nextWaypoint = None
 
     def stop(self):
         return self.controlModule.stop()
-        
-    def get_waypoint_box(self, waypoint):
-        location = carla.Location(waypoint[0], waypoint[1], waypoint[2])
-        rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
-        # print(rotation)
-        box = carla.BoundingBox(location, carla.Vector3D(0.5, 6, 3))
-        v = [(n.x, n.y) for n in box.get_local_vertices()]
-        return [v[0], v[2], v[6], v[4]] 
-     
-    def execute(self, currState, obstacleList, lane_marker, waypoint): 
-        self.prevWaypoint = (currState[0][0], currState[0][1])
+
+    def execute(self, currState, obstacleList, lane_marker, waypoint):
         # only update if we passed it
         if self.nextWaypoint != waypoint:
             if self.nextWaypoint:
-                print("reached: ", (self.nextWaypoint.location.x, self.nextWaypoint.location.y))
+                print("reached: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
             self.nextWaypoint = waypoint
             self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker)
 
-
-
-    # def execute(self, currState, obstacleList, lane_marker, waypoint):
-    #     # needs graph recomputation
-    #     if self.nextWaypoint != waypoint:
-    #         self.nextWaypoint = waypoint
-    #         self.decisionModule.calcRRTStar(currState, obstacleList, waypoint, waypoint, lane_marker)
-    #         if not self.map:
-    #             self.map = self.decisionModule.get_map()
-    #         self.curr_path = self.decisionModule.shortestPath[0]
-    #         self.next_ref_state = self.curr_path.popleft()
-
-    #     target_point_box = self.get_waypoint_box((self.next_ref_state[0],self.next_ref_state[1],3))
-
-    #     waypoint_location = carla.Location(self.next_ref_state[0],self.next_ref_state[1],3)
-    #     waypoint_rotation = self.map.get_waypoint(waypoint_location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
-    #     waypoint_box = carla.BoundingBox(waypoint_location, carla.Vector3D(1.5, 6, 3))
-
-    #     # get car's world point 
-    #     cars_location = carla.Location(currState[0][0],currState[0][1], 3)
-    #     cars_rotation = self.map.get_waypoint(cars_location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
-    #     cars_transformation = carla.Transform(cars_location, cars_rotation)
-    #     cars_transformation.transform(cars_location)
-    #     crossed = waypoint_box.contains(cars_location, carla.Transform(waypoint_location, waypoint_rotation))
-    #     print(waypoint, self.next_ref_state, self.curr_path, crossed)
-    #     if crossed and len(self.curr_path) >= 1:
-    #         self.next_ref_state = self.curr_path.popleft()
-
-    #     refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
-
-    #     if not refState:
-    #         return None
-    #     return self.controlModule.execute(currState, refState)
+        refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
+        if not refState:
+            return None
+        return self.controlModule.execute(currState, refState)
