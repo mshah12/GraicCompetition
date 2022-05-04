@@ -17,14 +17,16 @@ from collections import deque
     Outputs: list of nodes that represent optimal path to waypoint
 """
 class RRTStar():
-    def __init__(self, currState, obstacleList, waypoint, prevWaypoint, lane_info):
+    def __init__(self, currState, obstacleList, waypoint, prevWaypoint, lane_info, iteration):
         # connect with carla environment
         self.host = rospy.get_param('~host', 'localhost')
         self.port = rospy.get_param('~port', 2000)
         self.client = carla.Client(self.host, self.port)
         self.world = self.client.get_world()
         self.map = self.world.get_map()
-        
+        self.iteration = iteration
+
+
         # GRAPH REPRESENTATION
         # list of 'nodes' in the graph -- will be in tuple form (x,y)
         # adjencency dictionary of the graph -- key will be a node and value will be a set of nodes it's connected to 
@@ -46,10 +48,14 @@ class RRTStar():
         # flag used to print out triangle sampling 
         self.testflag = False
 
+        print("Local Goal: ", waypoint.location.x, waypoint.location.y, waypoint.location.z)
+        print("Local Start: ", currState[0][0], currState[0][1])
+        print("Global Goal: ", self.goal_location)
+        print("Global start: ", self.start)
         # translational offset used to draw points in path on the track 
-        self.x_off = abs(currState[0][0] - self.start[0])
-        self.y_off = abs(currState[0][1] - self.start[1])
-        
+        self.x_off = currState[0][0]
+        self.y_off = currState[0][1]
+        print("Offset: ", self.x_off, self.y_off)
         # list of obstacles
         self.obstacleList = obstacleList
 
@@ -75,10 +81,14 @@ class RRTStar():
     def drawPoints(self, path):
         for point in path:
             # apply rotation and translation from world -> local to draw
-            location = carla.Location(point[0], point[1], 0.1)
-            # rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).rotation
+            # location = carla.Location(point[0], point[1], 0.1)
+            location = carla.Location(self.x_off, self.y_off, 0.1)
+            rotation = carla.Rotation(0.0, -90.0, 0.0)
+            transform = carla.Transform(location, rotation)
+            location_point = carla.Location(point[0], point[1], 0.1)
+            transform.transform(location_point)
             ccolor = carla.Color(0, 0, 255, 255)
-            self.world.debug.draw_point(location, size=0.1, color=ccolor, life_time=0)
+            self.world.debug.draw_point(location_point, size=0.1, color=ccolor, life_time=0)
 
     """
         Returns a list of 4 points representing the top-down view of an object's bounding box 
@@ -295,7 +305,7 @@ class RRTStar():
         self.nodes.add(self.start)
         self.edges[self.start] = set()
         p1 = np.array([self.start[0], self.start[1]])
-        p2 = np.array([self.goal_vertices[6].x, self.goal_vertices[6].y])
+        p2 = np.array([self.goal_vertices[0].x, self.goal_vertices[0].y])
         p3 = np.array([self.goal_vertices[4].x, self.goal_vertices[4].y])
         u = p2 - p1
         v = p3 - p1
@@ -304,30 +314,32 @@ class RRTStar():
             p = self.uniform_triangle(u, v)
             p += p1
             new_node = (p[0], p[1])
-            # make sure node isn't in obstacle
-            if self.isValidNode(new_node):
-                self.nodes.add(new_node)
-                if new_node not in self.edges:
-                    self.edges[new_node] = set()
-                nearest_node = self.nearestNeighbor(new_node,radius=1)
-                # make sure (new_node, nearest_node) doesn't cross an obstacle
-                if not self.isThruObstacle(new_node, nearest_node):
-                    self.edges[new_node].add(nearest_node)
-                # add to goal set if new_node is in goal region
-                if self.isInGoalRegion(new_node):
-                    self.goal_nodes.append(new_node)
-        # make sure the start node has a nearest neighbor
-        self.edges[self.start].add(self.nearestNeighbor(self.start,radius=5))
+            self.nodes.add(new_node)
+        #     # make sure node isn't in obstacle
+        #     if self.isValidNode(new_node):
+        #         self.nodes.add(new_node)
+        #         if new_node not in self.edges:
+        #             self.edges[new_node] = set()
+        #         nearest_node = self.nearestNeighbor(new_node,radius=1)
+        #         # make sure (new_node, nearest_node) doesn't cross an obstacle
+        #         if not self.isThruObstacle(new_node, nearest_node):
+        #             self.edges[new_node].add(nearest_node)
+        #         # add to goal set if new_node is in goal region
+        #         if self.isInGoalRegion(new_node):
+        #             self.goal_nodes.append(new_node)
+        # # make sure the start node has a nearest neighbor
+        # self.edges[self.start].add(self.nearestNeighbor(self.start,radius=5))
 
         if not self.testflag:
-            print(self.nodes)
+            # print(self.nodes)
             self.drawPoints(self.nodes)
             fig, ax = plt.subplots()
             t = list(self.nodes)
             x = [n[0] for n in t]
             y = [n[1] for n in t]
             ax.scatter(x, y, s=1)
-            fig.savefig("test.png", dpi=200)
+            fig_name = "test" + str(self.iteration) + ".png"
+            fig.savefig(fig_name, dpi=200)
             self.testflag = True
 
     # https://github.com/dmahugh/dijkstra-algorithm/blob/master/dijkstra_algorithm.py

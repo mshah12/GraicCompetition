@@ -35,16 +35,12 @@ class VehicleDecision():
         self.prevWaypoint = None
         self.rrt_map = None
 
-    def calcRRTStar(self, currState, obstacleList, waypoint, prevWaypoint, lanemarkers):
+    def calcRRTStar(self, currState, obstacleList, waypoint, prevWaypoint, lanemarkers, iterations):
         i = 0
         # init a new RRT object
         RRTObject = RRTStar(currState, obstacleList,
-                            waypoint, prevWaypoint, lanemarkers)
+                            waypoint, prevWaypoint, lanemarkers, iterations)
         self.rrt_map = RRTObject.map
-        # populate internal variables with left and right lane nodes
-        RRTObject.getLaneEdges()
-        # calculate and store lane equations internally
-        RRTObject.calcLaneEdgeEquation()
         while(1):
             # create RRT Graph with 1000 nodes
             RRTObject.calcGraph(50)
@@ -259,6 +255,7 @@ class Controller(object):
         self.curr_path = []
         self.next_ref_state = None
         self.nextWaypoint = None
+        self.iteration = 0 
 
     def stop(self):
         return self.controlModule.stop()
@@ -269,7 +266,8 @@ class Controller(object):
             if self.nextWaypoint:
                 print("reached: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
             self.nextWaypoint = waypoint
-            self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker)
+            self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker, self.iteration)
+            self.iteration += 1 
 
         refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
         if not refState:
