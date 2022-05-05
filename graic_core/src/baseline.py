@@ -43,7 +43,7 @@ class VehicleDecision():
         self.rrt_map = RRTObject.map
         while(1):
             # create RRT Graph with 1000 nodes
-            RRTObject.calcGraph(50)
+            RRTObject.calcGraph(250)
             # get shortest path from start to goal
             self.shortestPath = RRTObject.shortestPath()
             if len(self.shortestPath) > 0:
@@ -266,8 +266,12 @@ class Controller(object):
             if self.nextWaypoint:
                 print("reached: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
             self.nextWaypoint = waypoint
+            print("Next: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
             self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker, self.iteration)
+            self.curr_path = self.decisionModule.shortestPath[0]
             self.iteration += 1 
+            # TODO: implement a way to detect if we've crossed the current node in the path in order to dequeue the next node
+            self.next_ref_state = self.curr_path.popleft()
 
         refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
         if not refState:
