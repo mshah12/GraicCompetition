@@ -43,7 +43,7 @@ class VehicleDecision():
         self.rrt_map = RRTObject.map
         while(1):
             # create RRT Graph with 1000 nodes
-            RRTObject.calcGraph(250)
+            RRTObject.calcGraph(1000)
             # get shortest path from start to goal
             self.shortestPath = RRTObject.shortestPath()
             if len(self.shortestPath) > 0:

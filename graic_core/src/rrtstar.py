@@ -37,32 +37,34 @@ class RRTStar():
         # list of goal nodes to mark the end of dijkstra 
         self.goal_nodes = set()
 
+        self.goal_bb_vertices = None
+
         # start node 
         # t = self.get_world_from_local((int(currState[0][0]), int(currState[0][1])))
         self.start = (currState[0][0], currState[0][1])
         
         # goal waypoint (i.e. the center of the green bounding box)
         self.goal = waypoint
-        self.goal_box, self.goal_location, self.goal_rotation, transform2 = self.get_bounding_box((self.goal.location.x, self.goal.location.y), carla.Vector3D(2, 6, 3))
+        self.goal_box, self.goal_location, self.goal_rotation, transform2 = self.get_bounding_box((self.goal.location.x, self.goal.location.y), carla.Vector3D(.3, 6, .3))
         self.world.debug.draw_box(self.goal_box, self.goal_rotation, thickness=0.25, color=carla.Color(
             255, 255, 0, 255), life_time=0)
-        self.goal_transform = carla.Transform(self.goal_location, self.goal_rotation)
+        self.goal_transform = transform2 #carla.Transform(self.goal_location, self.goal_rotation)
         # self.goal_vertices = self.goal_box.get_world_vertices(transform2)
         self.goal_vertices = self.goal_box.get_local_vertices()
 
-        for n in self.goal_vertices:
-            print(n.x, n.y, n.z)
+        # for n in self.goal_vertices:
+        #     print(n.x, n.y, n.z)
         # flag used to print out triangle sampling 
         self.testflag = False
 
-        print("Local Goal: ", waypoint.location.x, waypoint.location.y, waypoint.location.z)
-        print("Local Start: ", currState[0][0], currState[0][1])
-        print("Global Goal: ", self.goal_location)
-        print("Global start: ", self.start)
+        # print("Local Goal: ", waypoint.location.x, waypoint.location.y, waypoint.location.z)
+        # print("Local Start: ", currState[0][0], currState[0][1])
+        # print("Global Goal: ", self.goal_location)
+        # print("Global start: ", self.start)
         # translational offset used to draw points in path on the track 
         self.x_off = currState[0][0]
         self.y_off = currState[0][1]
-        print("Offset: ", self.x_off, self.y_off)
+        # print("Offset: ", self.x_off, self.y_off)
         # list of obstacles
         self.obstacleList = obstacleList
 
@@ -92,11 +94,8 @@ class RRTStar():
             # location = carla.Location(point[0], point[1], 0.1)
 
     def drawPoint(self, point, inGoal):
-        location = carla.Location(self.x_off - self.start[1], self.y_off + self.start[0], 0.1)
-        rotation = carla.Rotation(0.0, 270, 0.0)
-        transform = carla.Transform(location, rotation)
         location_point = carla.Location(point[0], point[1], 0.1)
-        transform.transform(location_point)
+        # transform.transform(location_point)
         # print(location_point.x, location_point.y)
         if inGoal:
             ccolor = carla.Color(0, 0, 255, 0)
@@ -181,6 +180,10 @@ class RRTStar():
         all_left = not any(is_right)
         all_right = all(is_right)
         return all_left or all_right
+
+
+    def isInGoal(self, node):
+        return self.isInBox(node, self.goal_bb_vertices)
 
     """
         Determines if 2 lines intersect with each other et_world_vert
@@ -307,7 +310,7 @@ class RRTStar():
             True if target node is in waypoint's goal
     """
     def isInGoalRegion(self, node):
-        world_loc = carla.Location(node[0], node[1], 0)
+        world_loc = carla.Location(node[0], node[1], .3)
         return self.goal_box.contains(world_loc, self.goal_transform)
 
     def uniform_triangle(self, u, v):
@@ -340,21 +343,26 @@ class RRTStar():
         self.nodes.add(self.start)
         self.edges[self.start] = set()
         p1 = np.array([self.start[0], self.start[1]])
-        p2_temp = np.array([self.goal_vertices[0].x, self.goal_vertices[0].y])
-        p3_temp = np.array([self.goal_vertices[2].x, self.goal_vertices[2].y])
+        p2 = np.array([self.goal_vertices[0].x, self.goal_vertices[0].y])
+        p3 = np.array([self.goal_vertices[2].x, self.goal_vertices[2].y])
 
-        p2 = self.rotate((p1[0], p1[1]), (p2_temp[0], p2_temp[1]), np.pi/2)
-        p3 = self.rotate((p1[0], p1[1]), (p3_temp[0], p3_temp[1]), np.pi/2)
+        bb1 = np.array([self.goal_vertices[4].x, self.goal_vertices[1].y])
+        bb4 = np.array([self.goal_vertices[6].x, self.goal_vertices[3].y])
 
-        x_shift = self.goal_vertices[0].x - self.start[0]
-        y_shift = self.goal_vertices[0]
+        self.goal_bb_vertices = np.array([bb1, p2, p3, bb4])
+
+        # print("AAAAAAAAAAAAA")
+        # print(self.goal_bb_vertices)
+
+        # x_shift = self.goal_vertices[0].x - self.start[0]
+        # y_shift = self.goal_vertices[0]
 
         u = p2 - p1
         v = p3 - p1
         goal_node = None
-        print(p1, p2, p3, u, v)
         # print(p1, p2, p3, u, v)
-        for i in range(max_iter):
+        # print(p1, p2, p3, u, v)
+        for _ in range(max_iter):
             p = self.uniform_triangle(u, v)
             p += p1
             new_node = (p[0], p[1])
@@ -371,10 +379,10 @@ class RRTStar():
                         self.edges[new_node].add(nearest_node)
                         self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
                 # add to goal set if new_node is in goal region
-                if self.isInGoalRegion(new_node):
+                # tmp = self.isInGoalRegion(new_node)
+                if self.isInGoal(new_node):
                     self.goal_nodes.add(new_node)
                     goal_node = new_node
-                    break
         # make sure the start node has a nearest neighbor
         # nn = self.nearestNeighbor(self.start)
         # self.edges[self.start].add(nn)
@@ -390,6 +398,7 @@ class RRTStar():
             fig_name = "test" + str(self.iteration) + ".png"
             fig.savefig(fig_name, dpi=200)
             self.testflag = True
+            # print("AAAAAAAAAAAAAAAAAAAAAAAAAA")
     
         self.edges[self.start].add(goal_node)
         self.weights[(self.start, goal_node)] = self.distance(self.start, goal_node)
@@ -456,8 +465,9 @@ class RRTStar():
             local_node = self.get_local_from_world(current_node)
             path.appendleft((local_node.x, local_node.y))
             current_node = previous_node[current_node]
-        t = self.get_local_from_world(start_node)
-        t = (t.x, t.y)
+        # t = self.get_local_from_world(start_node)
+        t = start_node
+        # t = (t.x, t.y)
         path.appendleft(t)
         # self.drawPoints(path)
         print(path)
