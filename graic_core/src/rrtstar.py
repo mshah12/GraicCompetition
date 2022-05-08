@@ -103,6 +103,11 @@ class RRTStar():
             ccolor = carla.Color(255, 0, 0, 0)
 
         self.world.debug.draw_point(location_point, size=0.05, color=ccolor, life_time=0)
+    
+    def drawLine(self, point1, point2):
+        point1_location = carla.Location(point1[0], point1[1], 0)
+        point2_location = carla.Location(point2[0], point2[1], 0)
+        self.world.debug.draw_line(point1_location, point2_location, thickness=0.1, life_time=0)
 
     """
         Returns a list of 4 points representing the top-down view of an object's bounding box 
@@ -351,12 +356,6 @@ class RRTStar():
 
         self.goal_bb_vertices = np.array([bb1, p2, p3, bb4])
 
-        # print("AAAAAAAAAAAAA")
-        # print(self.goal_bb_vertices)
-
-        # x_shift = self.goal_vertices[0].x - self.start[0]
-        # y_shift = self.goal_vertices[0]
-
         u = p2 - p1
         v = p3 - p1
         goal_node = None
@@ -377,19 +376,18 @@ class RRTStar():
                 if nearest_node:
                     if not self.isThruObstacle(new_node, nearest_node):
                         self.edges[new_node].add(nearest_node)
+                        self.edges[nearest_node].add(new_node)
+                        self.drawLine(new_node, nearest_node)
                         self.weights[(new_node, nearest_node)] = self.distance(new_node, nearest_node)
+                        self.weights[(nearest_node, new_node)] = self.distance(nearest_node, new_node)
                 # add to goal set if new_node is in goal region
                 # tmp = self.isInGoalRegion(new_node)
                 if self.isInGoal(new_node):
+                    print("Generated a goal node")
                     self.goal_nodes.add(new_node)
                     goal_node = new_node
-        # make sure the start node has a nearest neighbor
-        # nn = self.nearestNeighbor(self.start)
-        # self.edges[self.start].add(nn)
-        # self.weights[(self.start, nn)] = self.distance(self.start, nn)
+        
         if not self.testflag:
-            # print(self.nodes)
-            # self.drawPoints(self.nodes)
             fig, ax = plt.subplots()
             t = list(self.nodes)
             x = [n[0] for n in t]
@@ -398,10 +396,6 @@ class RRTStar():
             fig_name = "test" + str(self.iteration) + ".png"
             fig.savefig(fig_name, dpi=200)
             self.testflag = True
-            # print("AAAAAAAAAAAAAAAAAAAAAAAAAA")
-    
-        self.edges[self.start].add(goal_node)
-        self.weights[(self.start, goal_node)] = self.distance(self.start, goal_node)
 
     # https://github.com/dmahugh/dijkstra-algorithm/blob/master/dijkstra_algorithm.py
     def shortestPath(self):
@@ -420,7 +414,9 @@ class RRTStar():
         # Initialize previous_node, the dictionary that maps each node to the
         # node it was visited from when the the shortest path to it was found.
         previous_node = {node: None for node in self.nodes}
+        index = -1
         while unvisited_nodes:
+            index += 1
             # Set current_node to the unvisited node with shortest distance
             # calculated so far.
             current_node = min(
@@ -430,7 +426,10 @@ class RRTStar():
 
             # If current_node's distance is INFINITY, the remaining unvisited
             # nodes are not connected to start_node, so we're done.
+            # print("distance from start of current ", distance_from_start[current_node])
+            print(self.edges[start_node])
             if distance_from_start[current_node] == float("inf"):
+                # print("Iteration: ", index)
                 break
             # print(current_node)
             # For each neighbor of current_node, check whether the total distance
@@ -440,10 +439,12 @@ class RRTStar():
             for neighbor in self.edges[current_node]:
                 new_path = distance_from_start[current_node] + \
                     self.weights[(current_node, neighbor)]
+                # print("current_node ", current_node, " neighbor ", neighbor, " weight ", weight)
                 if new_path < distance_from_start[neighbor]:
                     distance_from_start[neighbor] = new_path
                     previous_node[neighbor] = current_node
-            print("Goal nodes: ", self.goal_nodes, " ", current_node)
+                    # print("test")
+            # print("Goal nodes: ", self.goal_nodes, " ", current_node)
             if current_node in self.goal_nodes:
                 end_node = current_node
                 break  # we've visited the destination node, so we're done
@@ -462,8 +463,6 @@ class RRTStar():
         #     return path, 1
         current_node = end_node
         while previous_node[current_node] is not None:
-            local_node = self.get_local_from_world(current_node)
-            path.appendleft((local_node.x, local_node.y))
             current_node = previous_node[current_node]
         # t = self.get_local_from_world(start_node)
         t = start_node
