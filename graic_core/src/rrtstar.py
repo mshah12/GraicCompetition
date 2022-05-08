@@ -46,8 +46,7 @@ class RRTStar():
         # goal waypoint (i.e. the center of the green bounding box)
         self.goal = waypoint
         self.goal_box, self.goal_location, self.goal_rotation, transform2 = self.get_bounding_box((self.goal.location.x, self.goal.location.y), carla.Vector3D(.3, 6, .3))
-        self.world.debug.draw_box(self.goal_box, self.goal_rotation, thickness=0.25, color=carla.Color(
-            255, 255, 0, 255), life_time=0)
+        self.world.debug.draw_box(self.goal_box, self.goal_rotation, thickness=0.25, color=carla.Color(255, 255, 0, 255), life_time=0)
         self.goal_transform = transform2 #carla.Transform(self.goal_location, self.goal_rotation)
         self.goal_vertices = self.goal_box.get_local_vertices()
 
@@ -385,6 +384,7 @@ class RRTStar():
                     # print("Generated a goal node")
                     self.goal_nodes.add(new_node)
                     goal_node = new_node
+                    break
         
         if not self.testflag:
             fig, ax = plt.subplots()

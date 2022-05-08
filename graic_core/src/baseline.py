@@ -308,32 +308,48 @@ class Controller(object):
     def execute(self, currState, obstacleList, lane_marker, waypoint):
         # only update if we passed it
         if self.nextWaypoint != waypoint:
-            if self.nextWaypoint:
-                print("reached: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
+            # if self.next_ref_state:
+            #     print("reached: ", (self.next_ref_state[0],self.next_ref_state[1]))
             self.nextWaypoint = waypoint
-            self.wp_box, self.wp_loc, self.wp_rot, self.wp_trans = self.get_bounding_box((self.nextWaypoint.location.x, self.nextWaypoint.location.y), carla.Vector3D(.3, 7, .3))
-            wp_vertices = self.wp_box.get_local_vertices()
-            p2 = np.array([wp_vertices[0].x, wp_vertices[0].y])
-            p3 = np.array([wp_vertices[2].x, wp_vertices[2].y])
 
-            bb1 = np.array([wp_vertices[4].x, wp_vertices[4].y])
-            bb4 = np.array([wp_vertices[6].x, wp_vertices[6].y])
-
-            self.wp_bb_vertices = np.array([bb1, p2, p3, bb4])
-            print("WP Vertices: ", self.wp_bb_vertices)
-
-
-            print("Next: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
             self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker, self.iteration)
             self.curr_path = self.decisionModule.shortestPath[0]
             self.next_ref_state = self.curr_path.popleft()
+
+
+            self.wp_box, self.wp_loc, self.wp_rot, self.wp_trans = self.get_bounding_box((self.next_ref_state[0], self.next_ref_state[1]), carla.Vector3D(.3, 7, .3))
+            wp_vertices = self.wp_box.get_local_vertices()
+            p2 = np.array([wp_vertices[0].x, wp_vertices[0].y])
+            p3 = np.array([wp_vertices[2].x, wp_vertices[2].y])
+            bb1 = np.array([wp_vertices[4].x, wp_vertices[4].y])
+            bb4 = np.array([wp_vertices[6].x, wp_vertices[6].y])
+            self.wp_bb_vertices = np.array([bb1, p2, p3, bb4])
+            # print("WP Vertices: ", self.wp_bb_vertices)
+
+
+            # print("reached: ", (self.next_ref_state[0],self.next_ref_state[1]))     
+            self.world.debug.draw_box(self.wp_box, self.wp_rot, thickness=0.25, color=carla.Color(255, 0, 0, 255), life_time=0)
             self.iteration += 1 
-            # TODO: implement a way to detect if we've crossed the current node in the path in order to dequeue the next node
-        print("Car current pos: ", (currState[0][0], currState[0][1]))
-        if self.wp_box.contains(carla.Location(currState[0][0], currState[0][1], 0), self.wp_trans):
+
+        if self.isInBox((currState[0][0], currState[0][1]), self.wp_bb_vertices):
             print("In Box Reached")
             self.next_ref_state = self.curr_path.popleft()
-        print("Current path: ", self.curr_path, " current ref state: ", self.next_ref_state)
+            self.wp_box, self.wp_loc, self.wp_rot, self.wp_trans = self.get_bounding_box((self.next_ref_state[0], self.next_ref_state[1]), carla.Vector3D(.3, 7, .3))
+            wp_vertices = self.wp_box.get_local_vertices()
+            p2 = np.array([wp_vertices[0].x, wp_vertices[0].y])
+            p3 = np.array([wp_vertices[2].x, wp_vertices[2].y])
+            bb1 = np.array([wp_vertices[4].x, wp_vertices[4].y])
+            bb4 = np.array([wp_vertices[6].x, wp_vertices[6].y])
+            self.wp_bb_vertices = np.array([bb1, p2, p3, bb4])
+            # print("WP Vertices: ", self.wp_bb_vertices)
+
+
+            # print("Next: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
+     
+            self.world.debug.draw_box(self.wp_box, self.wp_rot, thickness=0.25, color=carla.Color(255, 255, 0, 255), life_time=0)
+            self.iteration += 1 
+        
+        print("Current path: ", self.curr_path, " current ref state: ", self.next_ref_state, " current pos: ", (currState[0][0], currState[0][1]))
         refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
         if not refState:
             return None
