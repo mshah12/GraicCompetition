@@ -49,7 +49,6 @@ class RRTStar():
         self.world.debug.draw_box(self.goal_box, self.goal_rotation, thickness=0.25, color=carla.Color(
             255, 255, 0, 255), life_time=0)
         self.goal_transform = transform2 #carla.Transform(self.goal_location, self.goal_rotation)
-        # self.goal_vertices = self.goal_box.get_world_vertices(transform2)
         self.goal_vertices = self.goal_box.get_local_vertices()
 
         # for n in self.goal_vertices:
@@ -98,11 +97,10 @@ class RRTStar():
         # transform.transform(location_point)
         # print(location_point.x, location_point.y)
         if inGoal:
-            ccolor = carla.Color(0, 0, 255, 0)
+            self.world.debug.draw_point(location_point, size=0.05, life_time=0)
         else:
             ccolor = carla.Color(255, 0, 0, 0)
-
-        self.world.debug.draw_point(location_point, size=0.05, color=ccolor, life_time=0)
+            # self.world.debug.draw_point(location_point, size=0.05, color=ccolor, life_time=0)
     
     def drawLine(self, point1, point2):
         point1_location = carla.Location(point1[0], point1[1], 0)
@@ -351,8 +349,8 @@ class RRTStar():
         p2 = np.array([self.goal_vertices[0].x, self.goal_vertices[0].y])
         p3 = np.array([self.goal_vertices[2].x, self.goal_vertices[2].y])
 
-        bb1 = np.array([self.goal_vertices[4].x, self.goal_vertices[1].y])
-        bb4 = np.array([self.goal_vertices[6].x, self.goal_vertices[3].y])
+        bb1 = np.array([self.goal_vertices[4].x, self.goal_vertices[4].y])
+        bb4 = np.array([self.goal_vertices[6].x, self.goal_vertices[6].y])
 
         self.goal_bb_vertices = np.array([bb1, p2, p3, bb4])
 
@@ -365,7 +363,8 @@ class RRTStar():
             p = self.uniform_triangle(u, v)
             p += p1
             new_node = (p[0], p[1])
-            self.drawPoint(new_node, False)
+            isNodeInGoal = self.isInGoal(new_node)
+            self.drawPoint(new_node, isNodeInGoal)
             # make sure node isn't in obstacle
             if self.isValidNode(new_node):
                 self.nodes.add(new_node)
@@ -382,8 +381,8 @@ class RRTStar():
                         self.weights[(nearest_node, new_node)] = self.distance(nearest_node, new_node)
                 # add to goal set if new_node is in goal region
                 # tmp = self.isInGoalRegion(new_node)
-                if self.isInGoal(new_node):
-                    print("Generated a goal node")
+                if isNodeInGoal:
+                    # print("Generated a goal node")
                     self.goal_nodes.add(new_node)
                     goal_node = new_node
         
@@ -427,9 +426,8 @@ class RRTStar():
             # If current_node's distance is INFINITY, the remaining unvisited
             # nodes are not connected to start_node, so we're done.
             # print("distance from start of current ", distance_from_start[current_node])
-            print(self.edges[start_node])
+            # print(self.edges[start_node])
             if distance_from_start[current_node] == float("inf"):
-                # print("Iteration: ", index)
                 break
             # print(current_node)
             # For each neighbor of current_node, check whether the total distance
@@ -446,6 +444,7 @@ class RRTStar():
                     # print("test")
             # print("Goal nodes: ", self.goal_nodes, " ", current_node)
             if current_node in self.goal_nodes:
+                print("Iteration: ", index)
                 end_node = current_node
                 break  # we've visited the destination node, so we're done
         # for node in self.nodes:
@@ -464,10 +463,8 @@ class RRTStar():
         current_node = end_node
         while previous_node[current_node] is not None:
             current_node = previous_node[current_node]
+            path.appendleft(current_node)
         # t = self.get_local_from_world(start_node)
-        t = start_node
-        # t = (t.x, t.y)
-        path.appendleft(t)
         # self.drawPoints(path)
-        print(path)
+        # print(path)
         return path, distance_from_start[end_node]

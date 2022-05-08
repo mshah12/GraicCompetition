@@ -61,7 +61,7 @@ class VehicleDecision():
         """
             Get the reference state for the vehicle according to the current state and result from perception module
             Inputs:
-                currState: [Loaction, Rotation, Velocity] the current state of vehicle
+                currState: [Loaction, Rotation, Velocity] the current state of vgoalehicle
                 obstacleList: List of obstacles
             Outputs: reference state position and velocity of the vehicle
         """
@@ -250,15 +250,60 @@ class Controller(object):
         super(Controller, self).__init__()
         self.decisionModule = VehicleDecision()
         self.controlModule = VehicleController()
-        self.map = None
+        self.host = rospy.get_param('~host', 'localhost')
+        self.port = rospy.get_param('~port', 2000)
+        self.client = carla.Client(self.host, self.port)
+        self.world = self.client.get_world()
+        self.map = self.world.get_map()
         self.nextWaypoint = None
         self.curr_path = []
         self.next_ref_state = None
         self.nextWaypoint = None
+        self.wp = None
+        self.wp_bb_vertices = None
+        self.wp_rot = None 
+        self.wp_trans = None 
+        self.wp_loc = None 
         self.iteration = 0 
 
     def stop(self):
         return self.controlModule.stop()
+
+    """
+        Determines if a point lies within a box or not  
+        Inputs: 
+            node: object of interest
+        Outputs:
+            True: if point lies within box
+            False: if point is not in box 
+        Source:
+            https://stackoverflow.com/questions/63527698/determine-if-points-are-within-a-rotated-rectangle-standard-python-2-7-library    
+    """
+    def isInBox(self, node, vertices):
+        curr_x = node[0]
+        curr_y = node[1]
+        n = len(vertices)
+
+        def is_on_right_side(x, y, xy0, xy1):
+            x0, y0 = xy0
+            x1, y1 = xy1
+            a = float(y1 - y0)
+            b = float(x0 - x1)
+            c = -a*x0 - b*y0
+            val = a*x + b*y + c
+            return val >= 0
+        is_right = [is_on_right_side(curr_x, curr_y, (vertices[i][0], vertices[i][1]), (
+            vertices[(i+1) % n][0], vertices[(i+1) % n][1])) for i in range(n)]
+        all_left = not any(is_right)
+        all_right = all(is_right)
+        return all_left or all_right
+
+    def get_bounding_box(self, node, vector3d):
+        location = carla.Location(node[0], node[1], 0)
+        rotation = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform.rotation
+        waypoint_box = carla.BoundingBox(location, vector3d)
+        transform = self.map.get_waypoint(location, project_to_road=True, lane_type=carla.LaneType.Driving).transform
+        return (waypoint_box, location, rotation, transform)
 
     def execute(self, currState, obstacleList, lane_marker, waypoint):
         # only update if we passed it
@@ -266,13 +311,29 @@ class Controller(object):
             if self.nextWaypoint:
                 print("reached: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
             self.nextWaypoint = waypoint
+            self.wp_box, self.wp_loc, self.wp_rot, self.wp_trans = self.get_bounding_box((self.nextWaypoint.location.x, self.nextWaypoint.location.y), carla.Vector3D(.3, 7, .3))
+            wp_vertices = self.wp_box.get_local_vertices()
+            p2 = np.array([wp_vertices[0].x, wp_vertices[0].y])
+            p3 = np.array([wp_vertices[2].x, wp_vertices[2].y])
+
+            bb1 = np.array([wp_vertices[4].x, wp_vertices[4].y])
+            bb4 = np.array([wp_vertices[6].x, wp_vertices[6].y])
+
+            self.wp_bb_vertices = np.array([bb1, p2, p3, bb4])
+            print("WP Vertices: ", self.wp_bb_vertices)
+
+
             print("Next: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
             self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker, self.iteration)
             self.curr_path = self.decisionModule.shortestPath[0]
+            self.next_ref_state = self.curr_path.popleft()
             self.iteration += 1 
             # TODO: implement a way to detect if we've crossed the current node in the path in order to dequeue the next node
-        self.next_ref_state = self.curr_path.popleft()
-
+        print("Car current pos: ", (currState[0][0], currState[0][1]))
+        if self.wp_box.contains(carla.Location(currState[0][0], currState[0][1], 0), self.wp_trans):
+            print("In Box Reached")
+            self.next_ref_state = self.curr_path.popleft()
+        print("Current path: ", self.curr_path, " current ref state: ", self.next_ref_state)
         refState = self.decisionModule.get_ref_state(currState, obstacleList, lane_marker, self.next_ref_state)
         if not refState:
             return None
