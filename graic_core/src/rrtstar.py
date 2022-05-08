@@ -45,10 +45,11 @@ class RRTStar():
         
         # goal waypoint (i.e. the center of the green bounding box)
         self.goal = waypoint
-        self.goal_box, self.goal_location, self.goal_rotation, transform2 = self.get_bounding_box((self.goal.location.x, self.goal.location.y), carla.Vector3D(.3, 6, .3))
-        self.world.debug.draw_box(self.goal_box, self.goal_rotation, thickness=0.25, color=carla.Color(255, 255, 0, 255), life_time=0)
-        self.goal_transform = transform2 #carla.Transform(self.goal_location, self.goal_rotation)
+        self.goal_box, self.goal_location, self.goal_rotation, transform2 = self.get_bounding_box((self.goal.location.x, self.goal.location.y), carla.Vector3D(.5, 6, .3))
+        self.world.debug.draw_box(self.goal_box, self.goal_rotation, thickness=0.25, color=carla.Color(255, 255, 255, 255), life_time=0)
         self.goal_vertices = self.goal_box.get_local_vertices()
+        self.yaw = self.goal_rotation.yaw
+        self.goalMidPoint = (self.goal_location.x, self.goal_location.y)
 
         # for n in self.goal_vertices:
         #     print(n.x, n.y, n.z)
@@ -124,8 +125,8 @@ class RRTStar():
         v2 = self.get_world_from_local(v[2])
         v6 = self.get_world_from_local(v[6])
         v4 = self.get_world_from_local(v[4])
-        return [(v0.location.x, v0.location.y), (v2.location.x, v2.location.y),
-                (v6.location.x, v6.location.y), (v4.location.x, v4.location.y)]
+        return [(v0.vertex_location.x, v0.vertex_location.y), (v2.vertex_location.x, v2.vertex_location.y),
+                (v6.vertex_location.x, v6.vertex_location.y), (v4.vertex_location.x, v4.vertex_location.y)]
 
     """
         Determines if a point lies within an obstacle
@@ -334,7 +335,7 @@ class RRTStar():
 
         qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
         qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
-        return qx, qy
+        return np.array([qx, qy])
 
     """
         Create a bounding box region where nodes can be randomly generated and connected
@@ -351,10 +352,16 @@ class RRTStar():
         bb1 = np.array([self.goal_vertices[4].x, self.goal_vertices[4].y])
         bb4 = np.array([self.goal_vertices[6].x, self.goal_vertices[6].y])
 
+        
+        p2 = self.rotate(self.goalMidPoint, p2, self.yaw * np.pi/180)
+        p3 = self.rotate(self.goalMidPoint, p3, self.yaw * np.pi/180)
+        bb1 = self.rotate(self.goalMidPoint, bb1, self.yaw * np.pi/180)
+        bb4 = self.rotate(self.goalMidPoint, bb4, self.yaw * np.pi/180)
+
         self.goal_bb_vertices = np.array([bb1, p2, p3, bb4])
 
-        u = p2 - p1
-        v = p3 - p1
+        u = bb1 - p1
+        v = bb4 - p1
         goal_node = None
         # print(p1, p2, p3, u, v)
         # print(p1, p2, p3, u, v)
@@ -384,7 +391,7 @@ class RRTStar():
                     # print("Generated a goal node")
                     self.goal_nodes.add(new_node)
                     goal_node = new_node
-                    break
+                    
         
         if not self.testflag:
             fig, ax = plt.subplots()
