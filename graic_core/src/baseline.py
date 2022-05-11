@@ -69,8 +69,10 @@ class VehicleDecision():
 
         self.lane_marker = lane_marker.lane_markers_center.location[-1]
         self.lane_state = lane_marker.lane_state
-        self.target_x = waypoint[0]
-        self.target_y = waypoint[1]
+        if not self.target_x:
+            self.target_x = self.lane_marker.x
+        if not self.target_y: 
+            self.target_y = self.lane_marker.y
         if self.reachEnd:
             return None
         # print("Reach end: ", self.reachEnd)
@@ -306,10 +308,8 @@ class Controller(object):
         return (waypoint_box, location, rotation, transform)
 
     def execute(self, currState, obstacleList, lane_marker, waypoint):
-        # only update if we passed it
+        # update if we passed waypoint
         if self.nextWaypoint != waypoint:
-            # if self.next_ref_state:
-            #     print("reached: ", (self.next_ref_state[0],self.next_ref_state[1]))
             self.nextWaypoint = waypoint
 
             self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker, self.iteration)
@@ -324,15 +324,16 @@ class Controller(object):
             bb1 = np.array([wp_vertices[4].x, wp_vertices[4].y])
             bb4 = np.array([wp_vertices[6].x, wp_vertices[6].y])
             self.wp_bb_vertices = np.array([bb1, p2, p3, bb4])
-            # print("WP Vertices: ", self.wp_bb_vertices)
 
-
-            # print("reached: ", (self.next_ref_state[0],self.next_ref_state[1]))     
             self.world.debug.draw_box(self.wp_box, self.wp_rot, thickness=0.25, color=carla.Color(255, 0, 0, 255), life_time=0)
             self.iteration += 1 
-
+        print("Path: ", self.curr_path)
+        # update if we passed a node in the path 
         if self.isInBox((currState[0][0], currState[0][1]), self.wp_bb_vertices):
             print("In Box Reached")
+            if len(self.curr_path) == 0:
+                self.decisionModule.calcRRTStar(currState, obstacleList, self.nextWaypoint, self.nextWaypoint, lane_marker, self.iteration)
+                self.curr_path = self.decisionModule.shortestPath[0]
             self.next_ref_state = self.curr_path.popleft()
             self.wp_box, self.wp_loc, self.wp_rot, self.wp_trans = self.get_bounding_box((self.next_ref_state[0], self.next_ref_state[1]), carla.Vector3D(.3, 7, .3))
             wp_vertices = self.wp_box.get_local_vertices()
@@ -341,12 +342,8 @@ class Controller(object):
             bb1 = np.array([wp_vertices[4].x, wp_vertices[4].y])
             bb4 = np.array([wp_vertices[6].x, wp_vertices[6].y])
             self.wp_bb_vertices = np.array([bb1, p2, p3, bb4])
-            # print("WP Vertices: ", self.wp_bb_vertices)
-
-
-            # print("Next: ", (self.nextWaypoint.location.x,self.nextWaypoint.location.y))
      
-            self.world.debug.draw_box(self.wp_box, self.wp_rot, thickness=0.25, color=carla.Color(255, 255, 0, 255), life_time=0)
+            # self.world.debug.draw_box(self.wp_box, self.wp_rot, thickness=0.25, color=carla.Color(255, 255, 0, 255), life_time=0)
             self.iteration += 1 
         
         print("Current path: ", self.curr_path, " current ref state: ", self.next_ref_state, " current pos: ", (currState[0][0], currState[0][1]))

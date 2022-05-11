@@ -120,13 +120,13 @@ class RRTStar():
         for vertex in obs.vertices_locations:
             obs_x = vertex.vertex_location.x
             obs_y = vertex.vertex_location.y
+            print(obs_x, obs_y)
             v.append((obs_x, obs_y))
-        v0 = self.get_world_from_local(v[0])
-        v2 = self.get_world_from_local(v[2])
-        v6 = self.get_world_from_local(v[6])
-        v4 = self.get_world_from_local(v[4])
-        return [(v0.vertex_location.x, v0.vertex_location.y), (v2.vertex_location.x, v2.vertex_location.y),
-                (v6.vertex_location.x, v6.vertex_location.y), (v4.vertex_location.x, v4.vertex_location.y)]
+        v0 = v[0]
+        v2 = v[2]
+        v6 = v[6]
+        v4 = v[4]
+        return [v0, v2, v6, v4]
 
     """
         Determines if a point lies within an obstacle
